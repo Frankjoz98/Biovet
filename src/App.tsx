@@ -4,7 +4,7 @@ import Inventario from './modules/Inventario';
 import Clientes from './modules/Clientes';
 import Reportes from './modules/Reportes';
 import Rutas from './modules/Rutas';
-import { ShoppingCart, Clipboard, Users, BarChart3, Heart, MapPin, Shield, User } from 'lucide-react';
+import { ShoppingCart, Clipboard, Users, BarChart3, Heart, MapPin } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Tab = 'caja' | 'inventario' | 'clientes' | 'rutas' | 'reportes';

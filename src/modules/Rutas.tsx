@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { MapPin, Users, Plus, Shield, ShieldAlert, Award, DollarSign, Save, RefreshCw, Trash2, Navigation } from 'lucide-react';
+import { MapPin, Users, Plus, Shield, ShieldAlert, Award, RefreshCw, Navigation } from 'lucide-react';
 
 interface Collaborator {
   id: string;
