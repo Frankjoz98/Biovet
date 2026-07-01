@@ -4,43 +4,127 @@ import Inventario from './modules/Inventario';
 import Clientes from './modules/Clientes';
 import Reportes from './modules/Reportes';
 import Rutas from './modules/Rutas';
-import { ShoppingCart, Clipboard, Users, BarChart3, Heart, MapPin } from 'lucide-react';
+import Login from './modules/Login';
+import { ShoppingCart, Clipboard, Users, BarChart3, Heart, MapPin, LogOut, Crown, ShieldCheck, User2, Loader2 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Tab = 'caja' | 'inventario' | 'clientes' | 'rutas' | 'reportes';
+type UserRole = 'owner' | 'admin' | 'collaborator';
+
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+}
+
+const ROLE_BADGE: Record<UserRole, { label: string; color: string; icon: React.ReactNode }> = {
+  owner: { label: 'Dueño', color: 'text-amber-400 bg-amber-400/10 border-amber-400/30', icon: <Crown size={10} /> },
+  admin: { label: 'Administrador', color: 'text-neon-blue bg-neon-blue/10 border-neon-blue/30', icon: <ShieldCheck size={10} /> },
+  collaborator: { label: 'Colaborador', color: 'text-purple-400 bg-purple-400/10 border-purple-400/30', icon: <User2 size={10} /> },
+};
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('caja');
-  const [userRole, setUserRole] = useState<'admin' | 'collaborator'>('admin');
-  const [currentCollaboratorId, setCurrentCollaboratorId] = useState<string>('');
-  const [collabList, setCollabList] = useState<any[]>([]);
+  const [session, setSession] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
+  // Bootstrap: listen to Supabase auth changes
   useEffect(() => {
-    fetchCollaborators();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        fetchUserProfile(session.user.id);
+      } else {
+        setAuthLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        fetchUserProfile(session.user.id);
+      } else {
+        setUserProfile(null);
+        setAuthLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchCollaborators() {
+  async function fetchUserProfile(authUserId: string) {
+    setAuthLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('bv_collaborators')
-        .select('id, name');
-      if (data && data.length > 0) {
-        setCollabList(data);
-        setCurrentCollaboratorId(data[0].id);
+        .select('id, name, email, bv_roles(name)')
+        .eq('auth_user_id', authUserId)
+        .single();
+
+      if (error || !data) {
+        await supabase.auth.signOut();
+        return;
       }
-    } catch (e) {
-      console.error(e);
+
+      const roleName = (data.bv_roles as any)?.name as UserRole || 'collaborator';
+
+      setUserProfile({
+        id: data.id,
+        name: data.name || data.email || 'Usuario',
+        email: data.email || '',
+        role: roleName,
+      });
+
+      // Redirect collaborator away from restricted tabs if needed
+      if (roleName === 'collaborator' && (activeTab === 'reportes' || activeTab === 'inventario')) {
+        setActiveTab('caja');
+      }
+    } catch (err) {
+      console.error('Error loading profile:', err);
+      await supabase.auth.signOut();
+    } finally {
+      setAuthLoading(false);
     }
   }
 
-  // Filter tabs based on role
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setActiveTab('caja');
+  }
+
+  // ----- Loading screen -----
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#030308] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Heart size={28} className="text-rose-500 animate-pulse" fill="currentColor" />
+          <Loader2 size={24} className="text-neon-blue animate-spin" />
+          <span className="text-gray-500 text-xs">Verificando sesión...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ----- Login screen (no session) -----
+  if (!session || !userProfile) {
+    return <Login onLoginSuccess={() => {/* handled by auth state change */}} />;
+  }
+
+  const role = userProfile.role;
+  const isPrivileged = role === 'owner' || role === 'admin';
+
+  // Build navigation based on role
   const navigationItems = [
-    { id: 'caja', label: 'Caja (POS)', icon: ShoppingCart },
-    { id: 'inventario', label: 'Inventario', icon: Clipboard },
-    { id: 'clientes', label: 'Cartera Clientes', icon: Users },
-    { id: 'rutas', label: 'Rutas & Vendedores', icon: MapPin },
-    ...(userRole === 'admin' ? [{ id: 'reportes', label: 'Reportes', icon: BarChart3 }] : [])
-  ];
+    { id: 'caja', label: 'Caja (POS)', icon: ShoppingCart, visible: true },
+    { id: 'inventario', label: 'Inventario', icon: Clipboard, visible: true },
+    { id: 'clientes', label: 'Cartera Clientes', icon: Users, visible: true },
+    { id: 'rutas', label: 'Rutas & Vendedores', icon: MapPin, visible: true },
+    { id: 'reportes', label: 'Reportes', icon: BarChart3, visible: isPrivileged },
+  ].filter(item => item.visible);
+
+  const badge = ROLE_BADGE[role];
 
   return (
     <div className="min-h-screen bg-[#030308] text-gray-300 flex flex-col md:flex-row font-sans">
@@ -82,47 +166,35 @@ function App() {
           </nav>
         </div>
 
-        {/* Sidebar Footer & Role Simulator */}
-        <div className="p-6 border-t border-white/5 bg-white/2 space-y-3">
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Simular Rol:</span>
-            <div className="flex flex-col gap-1.5">
-              <select
-                value={userRole}
-                onChange={(e) => {
-                  const role = e.target.value as 'admin' | 'collaborator';
-                  setUserRole(role);
-                  if (role === 'admin') {
-                    setActiveTab('caja');
-                  } else if (activeTab === 'reportes') {
-                    setActiveTab('caja');
-                  }
-                }}
-                className="w-full bg-[#0d0d18] border border-white/10 rounded p-1.5 text-xs text-white focus:outline-none"
-              >
-                <option value="admin">Administrador (Admin)</option>
-                <option value="collaborator">Colaborador / Vendedor</option>
-              </select>
-
-              {userRole === 'collaborator' && collabList.length > 0 && (
-                <select
-                  value={currentCollaboratorId}
-                  onChange={(e) => setCurrentCollaboratorId(e.target.value)}
-                  className="w-full bg-[#0d0d18] border border-white/10 rounded p-1.5 text-xs text-white focus:outline-none"
-                >
-                  {collabList.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              )}
+        {/* Sidebar Footer */}
+        <div className="p-5 border-t border-white/5 space-y-3">
+          {/* Logged-in user info */}
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-gray-300 font-bold text-sm shrink-0">
+              {userProfile.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-white truncate">{userProfile.name}</p>
+              <p className="text-[10px] text-gray-500 truncate">{userProfile.email}</p>
+              <span className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.color}`}>
+                {badge.icon} {badge.label}
+              </span>
             </div>
           </div>
+
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-white/5 text-gray-500 hover:text-rose-400 hover:border-rose-500/20 hover:bg-rose-500/5 transition text-xs font-semibold"
+          >
+            <LogOut size={14} />
+            Cerrar Sesión
+          </button>
 
           <div className="flex items-center gap-2 pt-1 border-t border-white/5">
             <div className="w-2 h-2 bg-neon-emerald rounded-full animate-ping"></div>
             <span className="text-xs font-semibold text-gray-400">Sistema Conectado</span>
           </div>
-          <span className="text-[10px] text-gray-600 block mt-1">BioVet OS v1.0.0</span>
+          <span className="text-[10px] text-gray-600 block">BioVet OS v1.0.0</span>
         </div>
       </aside>
 
@@ -130,10 +202,15 @@ function App() {
       <main className="flex-1 p-6 md:p-8 overflow-y-auto h-screen">
         <div className="max-w-7xl mx-auto">
           {activeTab === 'caja' && <Caja />}
-          {activeTab === 'inventario' && <Inventario userRole={userRole} />}
+          {activeTab === 'inventario' && <Inventario userRole={role === 'collaborator' ? 'collaborator' : 'admin'} />}
           {activeTab === 'clientes' && <Clientes />}
-          {activeTab === 'rutas' && <Rutas userRole={userRole} currentCollaboratorId={currentCollaboratorId} />}
-          {activeTab === 'reportes' && userRole === 'admin' && <Reportes />}
+          {activeTab === 'rutas' && (
+            <Rutas
+              userRole={role === 'collaborator' ? 'collaborator' : 'admin'}
+              currentCollaboratorId={userProfile.id}
+            />
+          )}
+          {activeTab === 'reportes' && isPrivileged && <Reportes />}
         </div>
       </main>
 

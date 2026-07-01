@@ -830,86 +830,150 @@ export default function Caja() {
         </div>
       )}
 
-      {/* Printable Receipt Modal */}
+      {/* Printable Receipt Modal — Thermal 80mm Format */}
       {receiptData && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white text-black w-full max-w-sm rounded-lg p-6 shadow-2xl font-mono text-xs space-y-4">
-            
-            <div className="text-center space-y-1 relative">
-              <button 
-                onClick={() => setReceiptData(null)}
-                className="absolute right-0 top-0 p-1 text-gray-400 hover:text-black transition"
-              >
-                <X size={18} />
-              </button>
-              <h2 className="text-base font-black uppercase">BioVet Clínica Veterinaria</h2>
-              <p className="text-[10px]">Atención Profesional y Calidad</p>
-              <p className="text-[10px]">{receiptData.date}</p>
-            </div>
-
-            <hr className="border-dashed border-black" />
-
-            <div className="space-y-1">
-              <p><b>Número Factura:</b> {receiptData.invoice_number}</p>
-              <p><b>Transacción ID:</b> {receiptData.id}</p>
-              <p><b>Método Pago:</b> {receiptData.paymentMethod}</p>
-              {receiptData.clientName && <p><b>Cliente:</b> {receiptData.clientName}</p>}
-            </div>
-
-            <hr className="border-dashed border-black" />
-
-            {/* Receipt Items */}
-            <div className="space-y-1.5">
-              {receiptData.items.map((item) => (
-                <div key={item.product.id} className="flex justify-between">
-                  <span>{item.product.name} (x{item.quantity})</span>
-                  <span>${(item.product.price * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-
-            <hr className="border-dashed border-black" />
-
-            <div className="space-y-1 text-right">
-              <div className="flex justify-between font-bold text-sm">
-                <span>TOTAL:</span>
-                <span>
-                  {paymentCurrency === 'NIO' ? 'C$' : '$'} {receiptData.total.toFixed(2)}
-                </span>
-              </div>
-              {receiptData.paymentMethod === 'Efectivo' && (
-                <>
-                  <div className="flex justify-between">
-                    <span>Recibido C$:</span>
-                    <span>C$ {receiptData.paidNio.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Recibido USD $:</span>
-                    <span>$ {receiptData.paidUsd.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>Cambio C$:</span>
-                    <span>C$ {receiptData.changeNio.toFixed(2)}</span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <hr className="border-dashed border-black" />
-
-            <div className="text-center font-bold py-2 space-y-2">
-              <p>¡Gracias por su confianza!</p>
+        <>
+          {/* Screen overlay / preview */}
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="relative w-full max-w-xs">
+              {/* Close button (screen only) */}
               <button
-                onClick={() => window.print()}
-                className="no-print mx-auto flex items-center gap-1.5 px-3 py-1 bg-black text-white hover:bg-gray-800 rounded font-sans font-bold text-xs transition"
+                onClick={() => setReceiptData(null)}
+                className="receipt-no-print absolute -top-3 -right-3 z-10 p-1.5 bg-gray-800 border border-white/10 rounded-full text-gray-400 hover:text-white transition"
               >
-                <Printer size={12} />
-                Imprimir Recibo
+                <X size={14} />
               </button>
-            </div>
 
+              {/* Receipt preview card */}
+              <div className="bg-white text-black rounded-lg shadow-2xl overflow-hidden">
+                {/* Ticket area */}
+                <div
+                  id="thermal-receipt-print"
+                  style={{
+                    width: '100%',
+                    fontFamily: "'Courier New', Courier, monospace",
+                    fontSize: '11px',
+                    lineHeight: '1.5',
+                    color: '#000',
+                    background: '#fff',
+                    padding: '8px 10px 0 10px',
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                      BIOVET
+                    </div>
+                    <div style={{ fontSize: '10px' }}>Veterinaria & Agropecuaria</div>
+                    <div style={{ fontSize: '10px' }}>Tel: 2222-0000 | a-biovet.com</div>
+                    <div style={{ fontSize: '10px', marginTop: '2px' }}>{receiptData.date}</div>
+                  </div>
+
+                  <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+                  {/* Invoice info */}
+                  <div style={{ fontSize: '10px', marginBottom: '4px' }}>
+                    <div><b>Factura Nro:</b> {receiptData.invoice_number}</div>
+                    {receiptData.clientName && <div><b>Cliente:</b> {receiptData.clientName}</div>}
+                    <div><b>Pago:</b> {receiptData.paymentMethod}</div>
+                  </div>
+
+                  <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+                  {/* Column headers */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 'bold', marginBottom: '3px' }}>
+                    <span style={{ flex: 2 }}>DESCRIPCION</span>
+                    <span style={{ textAlign: 'right', flex: 1 }}>CANT</span>
+                    <span style={{ textAlign: 'right', flex: 1 }}>TOTAL</span>
+                  </div>
+
+                  {/* Items */}
+                  {receiptData.items.map((item) => {
+                    const lineTotal = item.product.price * item.quantity;
+                    return (
+                      <div
+                        key={item.product.id}
+                        style={{ marginBottom: '3px', fontSize: '10px' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ flex: 2, paddingRight: '4px', wordBreak: 'break-word' }}>
+                            {item.product.name}
+                          </span>
+                          <span style={{ textAlign: 'right', flex: 1 }}>{item.quantity}</span>
+                          <span style={{ textAlign: 'right', flex: 1 }}>
+                            {paymentCurrency === 'NIO' ? 'C$' : '$'}{lineTotal.toFixed(2)}
+                          </span>
+                        </div>
+                        <div style={{ color: '#555', fontSize: '9px' }}>
+                          P.U.: {paymentCurrency === 'NIO' ? 'C$' : '$'}{item.product.price.toFixed(2)}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+                  {/* Totals */}
+                  <div style={{ fontSize: '11px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>
+                      <span>TOTAL:</span>
+                      <span>{paymentCurrency === 'NIO' ? 'C$' : '$'} {receiptData.total.toFixed(2)}</span>
+                    </div>
+
+                    {receiptData.paymentMethod === 'Efectivo' && (
+                      <>
+                        {receiptData.paidNio > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                            <span>Recibido C$:</span>
+                            <span>C$ {receiptData.paidNio.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {receiptData.paidUsd > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                            <span>Recibido USD:</span>
+                            <span>$ {receiptData.paidUsd.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '11px', marginTop: '2px' }}>
+                          <span>Cambio C$:</span>
+                          <span>C$ {receiptData.changeNio.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+                  {/* Footer */}
+                  <div style={{ textAlign: 'center', fontSize: '10px', paddingBottom: '12px' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>¡Gracias por su preferencia!</div>
+                    <div>Conserve su comprobante.</div>
+                    <div style={{ marginTop: '4px', fontSize: '9px', color: '#555' }}>
+                      *** ORIGINAL ***
+                    </div>
+                  </div>
+                </div>
+
+                {/* Print button (screen only) */}
+                <div className="receipt-no-print p-3 bg-gray-50 border-t border-gray-200 flex gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-black text-white hover:bg-gray-800 rounded font-sans font-bold text-xs transition"
+                  >
+                    <Printer size={12} />
+                    Imprimir
+                  </button>
+                  <button
+                    onClick={() => setReceiptData(null)}
+                    className="flex-1 py-2 border border-gray-300 text-gray-600 hover:bg-gray-100 rounded font-sans font-bold text-xs transition"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
     </div>

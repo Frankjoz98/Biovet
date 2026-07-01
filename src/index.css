@@ -48,3 +48,50 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.4);
 }
+
+/* ========================================
+   THERMAL RECEIPT PRINT STYLES (80mm)
+   3Star POS-RPT004 / ESC/POS compatible
+   ======================================== */
+
+@media print {
+  /* Hide EVERYTHING in the app except the receipt */
+  body > * {
+    display: none !important;
+  }
+
+  /* Show only the receipt portal content */
+  #thermal-receipt-print {
+    display: block !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: black !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+  }
+
+  #thermal-receipt-print * {
+    background: transparent !important;
+    color: black !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    border-color: black !important;
+  }
+
+  /* Hide print button and close button inside receipt */
+  .receipt-no-print {
+    display: none !important;
+  }
+}
+
+/* Page size for thermal 80mm printer */
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
