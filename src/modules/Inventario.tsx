@@ -10,9 +10,14 @@ export interface Product {
   price: number;
   stock: number;
   min_stock: number;
+  category: string;
 }
 
-export default function Inventario() {
+interface InventarioProps {
+  userRole: 'admin' | 'collaborator';
+}
+
+export default function Inventario({ userRole }: InventarioProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -200,26 +205,28 @@ export default function Inventario() {
           </h1>
           <p className="text-gray-400 text-sm mt-1">Administra el stock, costos de compra, precios de venta y compras a proveedores.</p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              setEditingProduct(null);
-              setNewProduct({ code: '', name: '', cost: '', price: '', stock: '0', min_stock: '5' });
-              setShowAddModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-neon-blue hover:bg-neon-blue/80 text-black font-bold rounded-lg transition"
-          >
-            <Plus size={18} />
-            Nuevo Producto
-          </button>
-          <button
-            onClick={() => setShowPurchaseModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg transition"
-          >
-            <FileText size={18} />
-            Registrar Compra
-          </button>
-        </div>
+        {userRole === 'admin' && (
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setEditingProduct(null);
+                setNewProduct({ code: '', name: '', cost: '', price: '', stock: '0', min_stock: '5' });
+                setShowAddModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-neon-blue hover:bg-neon-blue/80 text-black font-bold rounded-lg transition"
+            >
+              <Plus size={18} />
+              Nuevo Producto
+            </button>
+            <button
+              onClick={() => setShowPurchaseModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg transition"
+            >
+              <FileText size={18} />
+              Registrar Compra
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Search & Actions */}
@@ -256,11 +263,11 @@ export default function Inventario() {
                 <tr className="border-b border-white/10 bg-white/5 text-gray-400 font-semibold text-xs uppercase tracking-wider">
                   <th className="py-4 px-6">Código</th>
                   <th className="py-4 px-6">Producto</th>
-                  <th className="py-4 px-6 text-right">Costo (Compra)</th>
+                  {userRole === 'admin' && <th className="py-4 px-6 text-right">Costo (Compra)</th>}
                   <th className="py-4 px-6 text-right">Precio (Venta)</th>
                   <th className="py-4 px-6 text-right">Stock</th>
                   <th className="py-4 px-6">Alerta Stock</th>
-                  <th className="py-4 px-6 text-center">Acciones</th>
+                  {userRole === 'admin' && <th className="py-4 px-6 text-center">Acciones</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-sm">
@@ -277,7 +284,7 @@ export default function Inventario() {
                       <tr key={p.id} className="hover:bg-white/2 transition">
                         <td className="py-4 px-6 font-mono text-neon-blue text-xs">{p.code}</td>
                         <td className="py-4 px-6 font-medium text-white">{p.name}</td>
-                        <td className="py-4 px-6 text-right font-mono">${p.cost.toFixed(2)}</td>
+                        {userRole === 'admin' && <td className="py-4 px-6 text-right font-mono">${p.cost.toFixed(2)}</td>}
                         <td className="py-4 px-6 text-right font-mono">${p.price.toFixed(2)}</td>
                         <td className={`py-4 px-6 text-right font-bold font-mono ${isLowStock ? 'text-rose-500' : 'text-neon-emerald'}`}>
                           {p.stock}
@@ -291,15 +298,17 @@ export default function Inventario() {
                             <span className="text-xs text-gray-500">Normal (Min: {p.min_stock})</span>
                           )}
                         </td>
-                        <td className="py-4 px-6 text-center">
-                          <button
-                            onClick={() => startEdit(p)}
-                            className="p-1.5 hover:bg-neon-blue/10 rounded-lg text-neon-blue transition"
-                            title="Editar"
-                          >
-                            <Edit size={16} />
-                          </button>
-                        </td>
+                        {userRole === 'admin' && (
+                          <td className="py-4 px-6 text-center">
+                            <button
+                              onClick={() => startEdit(p)}
+                              className="p-1.5 hover:bg-neon-blue/10 rounded-lg text-neon-blue transition"
+                              title="Editar"
+                            >
+                              <Edit size={16} />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })

@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins } from 'lucide-react';
 import type { Product } from './Inventario';
 import type { Client } from './Clientes';
 
 interface CartItem {
   product: Product;
   quantity: number;
+}
+
+interface CashSession {
+  id: string;
+  opened_at: string;
+  initial_cash_nio: number;
+  initial_cash_usd: number;
+  status: string;
 }
 
 export default function Caja() {
@@ -23,23 +31,104 @@ export default function Caja() {
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit'>('cash');
-  const [cashReceived, setCashReceived] = useState('');
+  const [cashReceivedNio, setCashReceivedNio] = useState('');
+  const [cashReceivedUsd, setCashReceivedUsd] = useState('');
+  const [exchangeRate, setExchangeRate] = useState(36.50); // NIO per USD
+  const [paymentCurrency, setPaymentCurrency] = useState<'NIO' | 'USD'>('NIO');
+
+  // Cash Session State
+  const [activeSession, setActiveSession] = useState<CashSession | null>(null);
+  const [showOpenSessionModal, setShowOpenSessionModal] = useState(false);
+  const [showCloseSessionModal, setShowCloseSessionModal] = useState(false);
+
+  // Opening session inputs
+  const [openSessionForm, setOpenSessionForm] = useState({
+    initial_nio: '0',
+    initial_usd: '0'
+  });
+
+  // Closing session inputs
+  const [closeSessionForm, setCloseSessionForm] = useState({
+    real_nio: '',
+    real_usd: '',
+    notes: ''
+  });
+
+  // Commission categories
+  const [commissionsConfig, setCommissionsConfig] = useState<any[]>([]);
 
   // Receipt modal state
   const [receiptData, setReceiptData] = useState<{
     id: string;
+    invoice_number: string;
     items: CartItem[];
     total: number;
     paymentMethod: string;
-    cashReceived: number;
-    change: number;
+    paidNio: number;
+    paidUsd: number;
+    changeNio: number;
     clientName?: string;
     date: string;
   } | null>(null);
 
   useEffect(() => {
+    checkActiveSession();
     fetchInitialData();
+    fetchCommissionsConfig();
   }, []);
+
+  // Barcode Scanner Listener
+  useEffect(() => {
+    let barcodeBuffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Barcode scanners type very fast (typically <50ms between key presses)
+      const now = Date.now();
+      if (now - lastKeyTime > 100) {
+        barcodeBuffer = '';
+      }
+      lastKeyTime = now;
+
+      if (e.key === 'Enter') {
+        if (barcodeBuffer.length >= 3) {
+          const matchedProd = products.find(p => p.code === barcodeBuffer || (p as any).barcode === barcodeBuffer);
+          if (matchedProd) {
+            addToCart(matchedProd);
+            setProdSearch('');
+            barcodeBuffer = '';
+            e.preventDefault();
+          }
+        }
+      } else if (e.key.length === 1) {
+        barcodeBuffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [products, cart]);
+
+  async function checkActiveSession() {
+    try {
+      const { data, error } = await supabase
+        .from('bv_cash_sessions')
+        .select('*')
+        .eq('status', 'open')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) {
+        setActiveSession(data);
+        setShowOpenSessionModal(false);
+      } else {
+        setActiveSession(null);
+        setShowOpenSessionModal(true);
+      }
+    } catch (err: any) {
+      console.error('Error checking active cash session:', err.message);
+    }
+  }
 
   async function fetchInitialData() {
     setLoading(true);
@@ -60,6 +149,92 @@ export default function Caja() {
       console.error('Error fetching checkout data:', err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchCommissionsConfig() {
+    try {
+      const { data } = await supabase
+        .from('bv_category_commissions')
+        .select('*');
+      setCommissionsConfig(data || []);
+    } catch (e) {
+      console.error('Error loading commissions config:', e);
+    }
+  }
+
+  // Handle Session Opening
+  async function handleOpenSession(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const { data, error } = await supabase
+        .from('bv_cash_sessions')
+        .insert({
+          initial_cash_nio: parseFloat(openSessionForm.initial_nio) || 0,
+          initial_cash_usd: parseFloat(openSessionForm.initial_usd) || 0,
+          status: 'open',
+          exchange_rate: exchangeRate
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      setActiveSession(data);
+      setShowOpenSessionModal(false);
+      alert('Caja chica abierta con éxito');
+    } catch (err: any) {
+      alert('Error abriendo caja: ' + err.message);
+    }
+  }
+
+  // Handle Session Closing
+  async function handleCloseSession(e: React.FormEvent) {
+    e.preventDefault();
+    if (!activeSession) return;
+
+    try {
+      // Calculate expected sales from sales in this session
+      const { data: salesData } = await supabase
+        .from('bv_sales')
+        .select('total_amount, payment_currency, paid_nio, paid_usd')
+        .eq('cash_session_id', activeSession.id);
+
+      let totalSalesNio = 0;
+      let totalSalesUsd = 0;
+
+      (salesData || []).forEach(s => {
+        if (s.payment_currency === 'NIO') {
+          totalSalesNio += Number(s.total_amount);
+        } else {
+          totalSalesUsd += Number(s.total_amount);
+        }
+      });
+
+      const realNio = parseFloat(closeSessionForm.real_nio) || 0;
+      const realUsd = parseFloat(closeSessionForm.real_usd) || 0;
+
+      const { error } = await supabase
+        .from('bv_cash_sessions')
+        .update({
+          closed_at: new Date().toISOString(),
+          expected_sales_nio: totalSalesNio,
+          expected_sales_usd: totalSalesUsd,
+          real_cash_nio: realNio,
+          real_cash_usd: realUsd,
+          difference_notes: closeSessionForm.notes,
+          status: 'closed'
+        })
+        .eq('id', activeSession.id);
+
+      if (error) throw error;
+
+      setActiveSession(null);
+      setShowCloseSessionModal(false);
+      setCloseSessionForm({ real_nio: '', real_usd: '', notes: '' });
+      alert('Caja cerrada correctamente. Registro archivado.');
+      checkActiveSession();
+    } catch (err: any) {
+      alert('Error cerrando caja: ' + err.message);
     }
   }
 
@@ -107,9 +282,24 @@ export default function Caja() {
     setCart(cart.filter(item => item.product.id !== productId));
   };
 
+  // Totals calculations
   const cartTotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
 
+  // Converts total amount into selected payment currency
+  const getConvertedTotal = () => {
+    if (paymentCurrency === 'USD') {
+      return cartTotal / exchangeRate;
+    }
+    return cartTotal;
+  };
+
   const handleCompleteSale = async () => {
+    if (!activeSession) {
+      alert('Debe abrir la caja antes de procesar transacciones.');
+      checkActiveSession();
+      return;
+    }
+
     if (cart.length === 0) {
       alert('El carrito está vacío.');
       return;
@@ -120,9 +310,20 @@ export default function Caja() {
       return;
     }
 
-    const cashReceivedVal = parseFloat(cashReceived) || 0;
-    if (paymentMethod === 'cash' && cashReceivedVal < cartTotal) {
-      alert(`El dinero recibido ($${cashReceivedVal.toFixed(2)}) es menor que el total de la venta ($${cartTotal.toFixed(2)}).`);
+    const convertedTotal = getConvertedTotal();
+    const paidNio = parseFloat(cashReceivedNio) || 0;
+    const paidUsd = parseFloat(cashReceivedUsd) || 0;
+
+    // Total cash input converted to selected currency
+    let totalCashReceived = 0;
+    if (paymentCurrency === 'NIO') {
+      totalCashReceived = paidNio + (paidUsd * exchangeRate);
+    } else {
+      totalCashReceived = paidUsd + (paidNio / exchangeRate);
+    }
+
+    if (paymentMethod === 'cash' && totalCashReceived < convertedTotal) {
+      alert(`El dinero recibido es menor que el total de la venta.`);
       return;
     }
 
@@ -149,16 +350,28 @@ export default function Caja() {
         .insert({
           client_id: selectedClient?.id || null,
           payment_method: paymentMethod,
-          total_amount: cartTotal,
-          cash_received: paymentMethod === 'cash' ? cashReceivedVal : 0
+          total_amount: convertedTotal,
+          cash_received: paymentMethod === 'cash' ? totalCashReceived : 0,
+          payment_currency: paymentCurrency,
+          exchange_rate: exchangeRate,
+          paid_nio: paidNio,
+          paid_usd: paidUsd,
+          cash_session_id: activeSession.id
         })
         .select()
         .single();
 
       if (saleError) throw saleError;
 
-      // 2. Insert items into bv_sale_items & Update stock
+      // 2. Insert items into bv_sale_items & calculate commissions
       for (const item of cart) {
+        // Find commission percentage
+        const pCategory = item.product.category || 'Otros';
+        const commissionRule = commissionsConfig.find(c => c.category_name.toLowerCase() === pCategory.toLowerCase());
+        const commPercentage = commissionRule ? commissionRule.percentage : 0;
+        const totalItemPrice = item.product.price * item.quantity;
+        const commissionAmount = (totalItemPrice * commPercentage) / 100;
+
         const { error: itemError } = await supabase
           .from('bv_sale_items')
           .insert({
@@ -167,7 +380,8 @@ export default function Caja() {
             quantity: item.quantity,
             unit_cost: item.product.cost,
             unit_price: item.product.price,
-            total: item.product.price * item.quantity
+            total: totalItemPrice,
+            commission_amount: commissionAmount
           });
 
         if (itemError) throw itemError;
@@ -181,21 +395,31 @@ export default function Caja() {
         if (stockError) throw stockError;
       }
 
+      // Calculate change
+      let changeNio = 0;
+      if (paymentMethod === 'cash') {
+        const diff = totalCashReceived - convertedTotal;
+        changeNio = paymentCurrency === 'NIO' ? diff : diff * exchangeRate;
+      }
+
       // 3. Show Receipt Modal
       setReceiptData({
         id: saleData.id.substring(0, 8),
+        invoice_number: saleData.invoice_number ? `FAC-${String(saleData.invoice_number).padStart(6, '0')}` : 'S/N',
         items: [...cart],
-        total: cartTotal,
+        total: convertedTotal,
         paymentMethod: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'transfer' ? 'Transferencia' : 'Crédito',
-        cashReceived: paymentMethod === 'cash' ? cashReceivedVal : 0,
-        change: paymentMethod === 'cash' ? Math.max(0, cashReceivedVal - cartTotal) : 0,
+        paidNio: paidNio,
+        paidUsd: paidUsd,
+        changeNio: Math.max(0, changeNio),
         clientName: selectedClient?.name,
         date: new Date().toLocaleString()
       });
 
       // Reset cart and states
       setCart([]);
-      setCashReceived('');
+      setCashReceivedNio('');
+      setCashReceivedUsd('');
       setSelectedClient(null);
       setPaymentMethod('cash');
       
@@ -226,7 +450,7 @@ export default function Caja() {
             <Search className="absolute left-3 top-2.5 text-gray-500" size={18} />
             <input
               type="text"
-              placeholder="Escribe el nombre o escanea el código del producto..."
+              placeholder="Escanea el código de barras o escribe el nombre del producto..."
               value={prodSearch}
               onChange={(e) => setProdSearch(e.target.value)}
               className="w-full bg-[#0d0d18] border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-white focus:outline-none focus:border-neon-blue/50 transition text-sm font-sans"
@@ -240,6 +464,23 @@ export default function Caja() {
           >
             <RefreshCw size={18} />
           </button>
+          {activeSession ? (
+            <button
+              onClick={() => setShowCloseSessionModal(true)}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5"
+            >
+              <Coins size={14} />
+              Cierre Caja
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowOpenSessionModal(true)}
+              className="px-4 py-2 bg-neon-emerald text-black font-bold rounded-lg text-xs transition flex items-center gap-1.5"
+            >
+              <Coins size={14} />
+              Apertura Caja
+            </button>
+          )}
         </div>
 
         {/* Product Grid */}
@@ -264,7 +505,10 @@ export default function Caja() {
                     className="glass-panel glass-panel-hover p-4 rounded-xl text-left flex flex-col justify-between h-36 border border-white/5 relative disabled:opacity-50 disabled:cursor-not-allowed group"
                   >
                     <div>
-                      <span className="text-[10px] font-mono text-neon-blue group-hover:text-white transition">{p.code}</span>
+                      <div className="flex justify-between items-start w-full">
+                        <span className="text-[9px] font-mono text-neon-blue group-hover:text-white transition">{p.code}</span>
+                        <span className="text-[9px] font-bold text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded">{p.category || 'Otros'}</span>
+                      </div>
                       <h3 className="text-sm font-semibold text-white mt-1 line-clamp-2">{p.name}</h3>
                     </div>
                     <div className="flex justify-between items-end w-full mt-2">
@@ -396,10 +640,38 @@ export default function Caja() {
 
         {/* Checkout Controls */}
         <div className="p-4 border-t border-white/5 bg-[#07070f] space-y-4">
+          
+          {/* Currency and Tasa de cambio config */}
+          <div className="flex justify-between items-center bg-[#0d0d18] border border-white/5 p-2 rounded-lg text-xs">
+            <div className="flex items-center gap-1">
+              <span className="text-gray-400 font-semibold uppercase">Moneda Pago:</span>
+              <select
+                value={paymentCurrency}
+                onChange={(e) => setPaymentCurrency(e.target.value as 'NIO' | 'USD')}
+                className="bg-transparent border-0 font-bold text-white focus:ring-0 focus:outline-none cursor-pointer"
+              >
+                <option value="NIO" className="bg-[#0d0d18]">Córdobas (C$)</option>
+                <option value="USD" className="bg-[#0d0d18]">Dólares ($)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1 font-mono text-gray-500">
+              <span>T.C:</span>
+              <input
+                type="number"
+                step="0.01"
+                value={exchangeRate}
+                onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 36.50)}
+                className="w-12 bg-transparent text-white border-b border-white/10 text-right focus:outline-none focus:border-neon-blue"
+              />
+            </div>
+          </div>
+
           {/* Total Price */}
           <div className="flex justify-between items-end">
             <span className="text-gray-400 text-xs font-semibold uppercase">Total a Cobrar</span>
-            <span className="text-2xl font-black font-mono text-white">${cartTotal.toFixed(2)}</span>
+            <span className="text-2xl font-black font-mono text-white">
+              {paymentCurrency === 'NIO' ? 'C$' : '$'} {getConvertedTotal().toFixed(2)}
+            </span>
           </div>
 
           {/* Payment Method Selector */}
@@ -425,15 +697,27 @@ export default function Caja() {
 
           {/* Cash input for change calculation */}
           {paymentMethod === 'cash' && (
-            <div className="flex gap-2 items-center bg-[#0d0d18] border border-white/10 p-2 rounded-lg">
-              <span className="text-xs text-gray-400 font-semibold uppercase pl-1">Efectivo Recibido:</span>
-              <input
-                type="number"
-                placeholder="0.00"
-                value={cashReceived}
-                onChange={(e) => setCashReceived(e.target.value)}
-                className="flex-1 bg-transparent text-right font-mono text-sm text-white focus:outline-none font-bold"
-              />
+            <div className="space-y-2">
+              <div className="flex gap-2 items-center bg-[#0d0d18] border border-white/10 p-2 rounded-lg">
+                <span className="text-xs text-gray-400 font-semibold uppercase pl-1">Efectivo C$:</span>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={cashReceivedNio}
+                  onChange={(e) => setCashReceivedNio(e.target.value)}
+                  className="flex-1 bg-transparent text-right font-mono text-sm text-white focus:outline-none font-bold"
+                />
+              </div>
+              <div className="flex gap-2 items-center bg-[#0d0d18] border border-white/10 p-2 rounded-lg">
+                <span className="text-xs text-gray-400 font-semibold uppercase pl-1">Efectivo USD $:</span>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={cashReceivedUsd}
+                  onChange={(e) => setCashReceivedUsd(e.target.value)}
+                  className="flex-1 bg-transparent text-right font-mono text-sm text-white focus:outline-none font-bold"
+                />
+              </div>
             </div>
           )}
 
@@ -448,6 +732,103 @@ export default function Caja() {
           </button>
         </div>
       </div>
+
+      {/* Opening Session Modal */}
+      {showOpenSessionModal && (
+        <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-sm rounded-xl p-6 border border-neon-blue/20 shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <Coins className="text-neon-emerald" size={20} />
+              Apertura de Caja Chica
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">Ingrese los montos iniciales en caja para esta sesión de venta.</p>
+            <form onSubmit={handleOpenSession} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Monto Inicial Córdobas (C$)</label>
+                <input
+                  type="number"
+                  required
+                  value={openSessionForm.initial_nio}
+                  onChange={(e) => setOpenSessionForm(prev => ({ ...prev, initial_nio: e.target.value }))}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white font-mono text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Monto Inicial Dólares ($)</label>
+                <input
+                  type="number"
+                  required
+                  value={openSessionForm.initial_usd}
+                  onChange={(e) => setOpenSessionForm(prev => ({ ...prev, initial_usd: e.target.value }))}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white font-mono text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-neon-emerald text-black font-bold uppercase rounded-lg text-xs hover:bg-neon-emerald/80 transition"
+              >
+                Abrir Turno de Caja
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Closing Session Modal */}
+      {showCloseSessionModal && (
+        <div className="fixed inset-0 z-40 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-md rounded-xl p-6 border border-rose-500/20 shadow-2xl">
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="text-rose-500" size={20} />
+                Cierre y Conciliación de Caja
+              </h2>
+              <button onClick={() => setShowCloseSessionModal(false)} className="text-gray-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCloseSession} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Efectivo Real en Caja (C$)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="0.00"
+                  value={closeSessionForm.real_nio}
+                  onChange={(e) => setCloseSessionForm(prev => ({ ...prev, real_nio: e.target.value }))}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white font-mono text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Efectivo Real en Caja (USD $)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="0.00"
+                  value={closeSessionForm.real_usd}
+                  onChange={(e) => setCloseSessionForm(prev => ({ ...prev, real_usd: e.target.value }))}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white font-mono text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Observaciones / Notas del Cierre</label>
+                <textarea
+                  value={closeSessionForm.notes}
+                  onChange={(e) => setCloseSessionForm(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Ej: Faltante de C$ 10 por cambio dado de más..."
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white text-xs h-20"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-rose-600 text-white font-bold uppercase rounded-lg text-xs hover:bg-rose-700 transition"
+              >
+                Cerrar Caja & Conciliar
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Printable Receipt Modal */}
       {receiptData && (
@@ -469,6 +850,7 @@ export default function Caja() {
             <hr className="border-dashed border-black" />
 
             <div className="space-y-1">
+              <p><b>Número Factura:</b> {receiptData.invoice_number}</p>
               <p><b>Transacción ID:</b> {receiptData.id}</p>
               <p><b>Método Pago:</b> {receiptData.paymentMethod}</p>
               {receiptData.clientName && <p><b>Cliente:</b> {receiptData.clientName}</p>}
@@ -491,17 +873,23 @@ export default function Caja() {
             <div className="space-y-1 text-right">
               <div className="flex justify-between font-bold text-sm">
                 <span>TOTAL:</span>
-                <span>${receiptData.total.toFixed(2)}</span>
+                <span>
+                  {paymentCurrency === 'NIO' ? 'C$' : '$'} {receiptData.total.toFixed(2)}
+                </span>
               </div>
               {receiptData.paymentMethod === 'Efectivo' && (
                 <>
                   <div className="flex justify-between">
-                    <span>Recibido:</span>
-                    <span>${receiptData.cashReceived.toFixed(2)}</span>
+                    <span>Recibido C$:</span>
+                    <span>C$ {receiptData.paidNio.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Cambio:</span>
-                    <span>${receiptData.change.toFixed(2)}</span>
+                    <span>Recibido USD $:</span>
+                    <span>$ {receiptData.paidUsd.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>Cambio C$:</span>
+                    <span>C$ {receiptData.changeNio.toFixed(2)}</span>
                   </div>
                 </>
               )}
