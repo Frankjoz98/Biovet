@@ -383,7 +383,7 @@ export default function Inventario({ userRole }: InventarioProps) {
 
               {/* Category */}
               <div>
-                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1 flex items-center gap-1">
+                <label className="flex items-center gap-1 text-xs font-semibold uppercase text-gray-400 mb-1">
                   <Tag size={11} /> Categoría (Línea de Producto) *
                 </label>
                 <select value={newProduct.category}
