@@ -440,10 +440,10 @@ export default function Caja() {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-140px)]">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-140px)]">
       
       {/* Product Selection (Left 2 Columns) */}
-      <div className="lg:col-span-2 flex flex-col h-full space-y-4">
+      <div className="lg:col-span-2 flex flex-col lg:h-full space-y-4">
         {/* Search */}
         <div className="flex gap-3">
           <div className="relative flex-1">
@@ -484,7 +484,7 @@ export default function Caja() {
         </div>
 
         {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto pr-1">
+        <div className="flex-1 overflow-y-auto pr-1 max-h-[55vh] lg:max-h-none">
           {loading ? (
             <div className="flex justify-center items-center h-full">
               <div className="w-10 h-10 border-4 border-neon-blue/20 border-t-neon-blue rounded-full animate-spin"></div>
@@ -529,7 +529,7 @@ export default function Caja() {
       </div>
 
       {/* Cart & Checkout Panel (Right Column) */}
-      <div className="glass-panel rounded-xl border border-white/10 flex flex-col h-full overflow-hidden shadow-card-glow bg-glass-card">
+      <div className="glass-panel rounded-xl border border-white/10 flex flex-col lg:h-full shadow-card-glow bg-glass-card overflow-visible lg:overflow-hidden">
         {/* Cart Header */}
         <div className="p-4 border-b border-white/5 bg-white/2 flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -542,7 +542,7 @@ export default function Caja() {
         </div>
 
         {/* Cart Item List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-52 lg:max-h-none">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm space-y-2 py-10">
               <ShoppingCart size={32} className="text-gray-600" />
@@ -639,7 +639,7 @@ export default function Caja() {
         </div>
 
         {/* Checkout Controls */}
-        <div className="p-4 border-t border-white/5 bg-[#07070f] space-y-4">
+        <div className="p-4 border-t border-white/5 bg-[#07070f] space-y-3">
           
           {/* Currency and Tasa de cambio config */}
           <div className="flex justify-between items-center bg-[#0d0d18] border border-white/5 p-2 rounded-lg text-xs">
@@ -675,14 +675,14 @@ export default function Caja() {
           </div>
 
           {/* Payment Method Selector */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {(['cash', 'transfer', 'credit'] as const).map((method) => {
               const isActive = paymentMethod === method;
               return (
                 <button
                   key={method}
                   onClick={() => setPaymentMethod(method)}
-                  className={`py-2 px-1 border rounded-lg text-xs font-semibold uppercase transition flex flex-col items-center gap-1 ${
+                  className={`py-1.5 px-1 border rounded-lg text-xs font-semibold uppercase transition flex flex-col items-center gap-1 ${
                     isActive 
                       ? 'bg-neon-blue/20 border-neon-blue text-neon-blue' 
                       : 'bg-white/2 border-white/10 text-gray-400 hover:bg-white/5'

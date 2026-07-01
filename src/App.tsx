@@ -129,11 +129,12 @@ function App() {
   return (
     <div className="min-h-screen bg-[#030308] text-gray-300 flex flex-col md:flex-row font-sans">
       
-      {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 glass-panel border-r border-white/5 flex flex-col justify-between shrink-0 z-10 md:h-screen sticky top-0">
-        <div className="p-6">
+      {/* Sidebar Navigation — horizontal on mobile, vertical on md+ */}
+      <aside className="w-full md:w-64 glass-panel border-b md:border-b-0 md:border-r border-white/5 flex flex-col md:justify-between shrink-0 z-20 md:h-screen md:sticky md:top-0">
+        {/* Logo — hidden on very small screens, shown from sm */}
+        <div className="p-4 md:p-6">
           {/* Logo Brand */}
-          <div className="flex items-center gap-3 mb-8">
+          <div className="hidden md:flex items-center gap-3 mb-8">
             <div className="p-2 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-500 shadow-neon-purple animate-pulse">
               <Heart size={20} fill="currentColor" />
             </div>
@@ -143,8 +144,8 @@ function App() {
             </div>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="space-y-1.5">
+          {/* Navigation Links — horizontal scrollable on mobile, vertical on md+ */}
+          <nav className="flex md:flex-col gap-1 md:space-y-1.5 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0">
             {navigationItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -152,22 +153,22 @@ function App() {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id as Tab)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${
+                  className={`flex-shrink-0 md:w-full flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
                     isActive 
                       ? 'bg-neon-blue/10 border border-neon-blue/20 text-neon-blue shadow-neon-blue' 
                       : 'border border-transparent text-gray-400 hover:bg-white/5 hover:text-white'
                   }`}
                 >
-                  <Icon size={18} />
-                  <span>{item.label}</span>
+                  <Icon size={16} />
+                  <span className="text-xs md:text-sm">{item.label}</span>
                 </button>
               );
             })}
           </nav>
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="p-5 border-t border-white/5 space-y-3">
+        {/* Sidebar Footer — hidden on mobile to save space */}
+        <div className="hidden md:block p-5 border-t border-white/5 space-y-3">
           {/* Logged-in user info */}
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-gray-300 font-bold text-sm shrink-0">
@@ -199,7 +200,7 @@ function App() {
       </aside>
 
       {/* Main Content Stage */}
-      <main className="flex-1 p-6 md:p-8 overflow-y-auto h-screen">
+      <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto md:h-screen">
         <div className="max-w-7xl mx-auto">
           {activeTab === 'caja' && <Caja />}
           {activeTab === 'inventario' && <Inventario userRole={role === 'collaborator' ? 'collaborator' : 'admin'} />}
