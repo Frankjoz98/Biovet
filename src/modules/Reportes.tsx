@@ -15,7 +15,11 @@ import {
   Lock,
   User,
   ShieldAlert,
-  Loader2
+  Loader2,
+  Calendar,
+  Percent,
+  CheckCircle,
+  Clock
 } from 'lucide-react';
 
 interface Expense {
@@ -53,11 +57,8 @@ interface CashSession {
   opened_at: string;
   closed_at: string | null;
   initial_cash_nio: number;
-  initial_cash_usd: number;
   expected_sales_nio: number;
-  expected_sales_usd: number;
   real_cash_nio: number | null;
-  real_cash_usd: number | null;
   status: string;
   difference_notes: string | null;
   opened_by: string;
@@ -80,9 +81,24 @@ interface PurchaseDetailItem {
   bv_products?: { name: string } | null;
 }
 
+interface Route {
+  id: string;
+  name: string;
+  collaborator_id: string;
+}
+
+interface CommissionPayment {
+  id: string;
+  route_id: string;
+  amount: number;
+  payment_date: string;
+  status: string;
+  created_at: string;
+}
+
 export default function Reportes() {
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'financial' | 'sessions'>('financial');
+  const [activeTab, setActiveTab] = useState<'financial' | 'sessions' | 'commissions'>('financial');
 
   // Financial Summary State
   const [summary, setSummary] = useState({
@@ -99,12 +115,28 @@ export default function Reportes() {
   const [cashSessions, setCashSessions] = useState<CashSession[]>([]);
   const [collaborators, setCollaborators] = useState<Record<string, string>>({});
 
+  // Route Commissions State
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
+  const [routeEarnedMap, setRouteEarnedMap] = useState<Record<string, number>>({});
+  const [routePaidMap, setRoutePaidMap] = useState<Record<string, number>>({});
+
   // Add Expense form
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [newExpense, setNewExpense] = useState({
     description: '',
     amount: '',
     category: 'Alquiler'
+  });
+
+  // Commission Payment Modal
+  const [showCommissionModal, setShowCommissionModal] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [newPayment, setNewPayment] = useState({
+    route_id: '',
+    amount: '',
+    payment_date: new Date().toISOString().substring(0, 10),
+    status: 'Pagado'
   });
 
   // Sale Detail Modal
@@ -145,7 +177,7 @@ export default function Reportes() {
       if (activeSaleIds.length > 0) {
         const { data } = await supabase
           .from('bv_sale_items')
-          .select('quantity, unit_cost')
+          .select('sale_id, quantity, unit_cost, commission_amount')
           .in('sale_id', activeSaleIds);
         saleItemsData = data || [];
       }
@@ -177,6 +209,45 @@ export default function Reportes() {
         collabMap[c.id] = c.name;
       });
       setCollaborators(collabMap);
+
+      // 7. Fetch Routes
+      const { data: routesData } = await supabase
+        .from('bv_routes')
+        .select('*')
+        .order('name', { ascending: true });
+      setRoutes(routesData || []);
+
+      // 8. Fetch Route Commission Payments
+      const { data: paymentsData } = await supabase
+        .from('bv_route_commission_payments')
+        .select('*')
+        .order('payment_date', { ascending: false });
+      setCommissionPayments(paymentsData || []);
+
+      // Calculate commissions per route in memory
+      const routeEarned: Record<string, number> = {};
+      const activeRouteSales = (salesData || []).filter(s => s.status !== 'anulada' && s.sale_type === 'route');
+      const routeSalesMap = activeRouteSales.reduce((acc, s) => {
+        if (s.route_id) acc[s.id] = s.route_id;
+        return acc;
+      }, {} as Record<string, string>);
+
+      saleItemsData.forEach(item => {
+        const routeId = routeSalesMap[item.sale_id];
+        if (routeId) {
+          routeEarned[routeId] = (routeEarned[routeId] || 0) + Number(item.commission_amount || 0);
+        }
+      });
+      setRouteEarnedMap(routeEarned);
+
+      // Calculate paid commissions per route in memory
+      const routePaid: Record<string, number> = {};
+      (paymentsData || []).forEach(p => {
+        if (p.status === 'Pagado') {
+          routePaid[p.route_id] = (routePaid[p.route_id] || 0) + Number(p.amount);
+        }
+      });
+      setRoutePaidMap(routePaid);
 
       // Calculations (only calculate sales totals for active, non-voided sales)
       const totalSales = (salesData || [])
@@ -229,6 +300,43 @@ export default function Reportes() {
       alert('Gasto registrado con éxito.');
     } catch (err: any) {
       alert('Error registrando gasto: ' + err.message);
+    }
+  }
+
+  // Handle register commission payment
+  async function handleRegisterCommissionPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newPayment.route_id || !newPayment.amount || !newPayment.payment_date) {
+      alert('Por favor complete todos los campos.');
+      return;
+    }
+
+    setSavingPayment(true);
+    try {
+      const { error } = await supabase
+        .from('bv_route_commission_payments')
+        .insert({
+          route_id: newPayment.route_id,
+          amount: parseFloat(newPayment.amount),
+          payment_date: new Date(newPayment.payment_date).toISOString(),
+          status: newPayment.status
+        });
+
+      if (error) throw error;
+
+      setShowCommissionModal(false);
+      setNewPayment({
+        route_id: '',
+        amount: '',
+        payment_date: new Date().toISOString().substring(0, 10),
+        status: 'Pagado'
+      });
+      fetchFinancialData();
+      alert('Pago de comisión registrado con éxito.');
+    } catch (err: any) {
+      alert('Error registrando pago: ' + err.message);
+    } finally {
+      setSavingPayment(false);
     }
   }
 
@@ -308,7 +416,7 @@ export default function Reportes() {
         throw new Error('Clave del propietario incorrecta. No autorizado.');
       }
 
-      // 3. Authenticated! Void sale using the pgsql function we created
+      // 3. Authenticated! Void sale using pgsql function
       const { error: voidError } = await supabase
         .rpc('bv_void_sale', { sale_uuid: selectedSale.id });
 
@@ -333,11 +441,13 @@ export default function Reportes() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-            Reportes y Auditoría
+            Reportes y Finanzas
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Monitorea ingresos, egresos de caja, cierres, detalle de facturas y anulación.</p>
+          <p className="text-gray-400 text-sm mt-1 flex items-center gap-1.5">
+            Monitorea ingresos, egresos de caja, cierres, comisiones por rutas y anulación.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Tab switcher */}
           <div className="flex rounded-lg overflow-hidden border border-white/10 p-0.5 bg-[#0d0d18]">
             <button
@@ -354,21 +464,42 @@ export default function Reportes() {
               onClick={() => setActiveTab('sessions')}
               className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
                 activeTab === 'sessions'
-                  ? 'bg-purple-500/20 text-purple-400 rounded-md'
+                  ? 'bg-[#8b5cf6]/20 text-[#c084fc] rounded-md'
                   : 'text-gray-400 hover:text-white'
               }`}
             >
-              Historial de Caja
+              Historial Caja
+            </button>
+            <button
+              onClick={() => setActiveTab('commissions')}
+              className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+                activeTab === 'commissions'
+                  ? 'bg-amber-500/20 text-amber-400 rounded-md'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Comisiones Rutas
             </button>
           </div>
 
-          <button
-            onClick={() => setShowExpenseModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-black font-bold rounded-lg transition text-sm"
-          >
-            <Plus size={18} />
-            Registrar Gasto
-          </button>
+          {activeTab === 'commissions' ? (
+            <button
+              onClick={() => setShowCommissionModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg transition text-sm shadow-amber-500/10"
+            >
+              <Plus size={18} />
+              Pagar Comisión
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowExpenseModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-black font-bold rounded-lg transition text-sm"
+            >
+              <Plus size={18} />
+              Registrar Gasto
+            </button>
+          )}
+
           <button
             onClick={fetchFinancialData}
             className="p-2 border border-white/10 rounded-lg bg-[#0d0d18] hover:bg-white/5 transition text-gray-400"
@@ -570,12 +701,12 @@ export default function Reportes() {
 
           </div>
         </>
-      ) : (
-        /* ── Cash Sessions Tab (Historial de Caja) ─────────────────── */
+      ) : activeTab === 'sessions' ? (
+        /* ── Cash Sessions Tab (Historial de Caja) (NIO Only) ────────── */
         <div className="space-y-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Coins className="text-purple-400" size={18} />
-            Historial de Aperturas y Cierres de Caja
+            Historial de Aperturas y Cierres de Caja (Local Físico)
           </h2>
           <div className="glass-panel rounded-xl overflow-hidden shadow-card-glow">
             <div className="overflow-x-auto">
@@ -584,9 +715,9 @@ export default function Reportes() {
                   <tr className="border-b border-white/10 bg-white/5 text-gray-400 font-semibold text-xs uppercase tracking-wider">
                     <th className="py-3.5 px-5">Apertura / Fecha</th>
                     <th className="py-3.5 px-5">Cierre / Fecha</th>
-                    <th className="py-3.5 px-5 text-right">Inicial (NIO/USD)</th>
-                    <th className="py-3.5 px-5 text-right">Esperado (NIO/USD)</th>
-                    <th className="py-3.5 px-5 text-right">Reportado (NIO/USD)</th>
+                    <th className="py-3.5 px-5 text-right">Inicial (C$)</th>
+                    <th className="py-3.5 px-5 text-right">Esperado (C$)</th>
+                    <th className="py-3.5 px-5 text-right">Reportado (C$)</th>
                     <th className="py-3.5 px-5">Responsable</th>
                     <th className="py-3.5 px-5">Diferencia / Notas</th>
                   </tr>
@@ -615,20 +746,15 @@ export default function Reportes() {
                               <span className="text-emerald-400 font-bold uppercase tracking-wider">Abierta / Activa</span>
                             )}
                           </td>
-                          <td className="py-3.5 px-5 text-right font-mono text-gray-400">
-                            <div className="text-white">C$ {cs.initial_cash_nio.toFixed(2)}</div>
-                            <div className="text-[10px] text-gray-500">$ {cs.initial_cash_usd.toFixed(2)}</div>
+                          <td className="py-3.5 px-5 text-right font-mono text-white">
+                            C$ {cs.initial_cash_nio.toFixed(2)}
                           </td>
-                          <td className="py-3.5 px-5 text-right font-mono text-gray-400">
-                            <div className="text-white">C$ {cs.expected_sales_nio.toFixed(2)}</div>
-                            <div className="text-[10px] text-gray-500">$ {cs.expected_sales_usd.toFixed(2)}</div>
+                          <td className="py-3.5 px-5 text-right font-mono text-white">
+                            C$ {cs.expected_sales_nio.toFixed(2)}
                           </td>
-                          <td className="py-3.5 px-5 text-right font-mono text-gray-400">
+                          <td className="py-3.5 px-5 text-right font-mono text-white">
                             {isClosed ? (
-                              <>
-                                <div className="text-white">C$ {(cs.real_cash_nio || 0).toFixed(2)}</div>
-                                <div className="text-[10px] text-gray-500">$ {(cs.real_cash_usd || 0).toFixed(2)}</div>
-                              </>
+                              <span>C$ {(cs.real_cash_nio || 0).toFixed(2)}</span>
                             ) : (
                               <span className="text-gray-500">—</span>
                             )}
@@ -662,6 +788,146 @@ export default function Reportes() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ── Commission Payments Tab (Comisiones por Ruta) ────────── */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Commissions Table (Left 2 columns) */}
+          <div className="lg:col-span-2 space-y-4">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Percent className="text-amber-400" size={18} />
+              Balance de Comisiones por Ruta
+            </h2>
+            <div className="glass-panel rounded-xl overflow-hidden shadow-card-glow">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-white/5 text-gray-400 font-semibold text-xs uppercase tracking-wider">
+                      <th className="py-3.5 px-5">Ruta</th>
+                      <th className="py-3.5 px-5">Colaborador</th>
+                      <th className="py-3.5 px-5 text-right">Comisión Acumulada</th>
+                      <th className="py-3.5 px-5 text-right">Monto Pagado</th>
+                      <th className="py-3.5 px-5 text-right">Balance Pendiente</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-xs font-sans text-gray-300">
+                    {routes.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center text-gray-500">No se encontraron rutas registradas.</td>
+                      </tr>
+                    ) : (
+                      routes.map((route) => {
+                        const earned = routeEarnedMap[route.id] || 0;
+                        const paid = routePaidMap[route.id] || 0;
+                        const pending = earned - paid;
+                        return (
+                          <tr key={route.id} className="hover:bg-white/2 transition">
+                            <td className="py-3.5 px-5 font-semibold text-white">{route.name}</td>
+                            <td className="py-3.5 px-5 text-gray-400 flex items-center gap-1.5 mt-1 border-0">
+                              <User size={12} className="text-gray-500" />
+                              {collaborators[route.collaborator_id] || 'Sin asignar'}
+                            </td>
+                            <td className="py-3.5 px-5 text-right font-mono text-white">
+                              C$ {earned.toFixed(2)}
+                            </td>
+                            <td className="py-3.5 px-5 text-right font-mono text-neon-emerald">
+                              C$ {paid.toFixed(2)}
+                            </td>
+                            <td className={`py-3.5 px-5 text-right font-mono font-bold ${pending > 0 ? 'text-amber-400' : 'text-gray-500'}`}>
+                              C$ {pending.toFixed(2)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Commissions Payment History */}
+            <div className="space-y-3 pt-2">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Calendar size={16} className="text-neon-blue" />
+                Historial de Transacciones de Pago
+              </h3>
+              <div className="glass-panel rounded-xl overflow-hidden">
+                <div className="overflow-x-auto max-h-[250px]">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/5 bg-white/3 text-gray-400 font-semibold text-[10px] uppercase tracking-wider">
+                        <th className="py-2.5 px-4">Fecha Pago</th>
+                        <th className="py-2.5 px-4">Ruta</th>
+                        <th className="py-2.5 px-4">Estado</th>
+                        <th className="py-2.5 px-4 text-right">Monto Pagado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs text-gray-300">
+                      {commissionPayments.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-gray-500">No hay pagos registrados.</td>
+                        </tr>
+                      ) : (
+                        commissionPayments.map((p) => {
+                          const routeName = routes.find(r => r.id === p.route_id)?.name || 'Ruta Desconocida';
+                          return (
+                            <tr key={p.id} className="hover:bg-white/2 transition">
+                              <td className="py-2.5 px-4 font-mono text-gray-400">
+                                {new Date(p.payment_date).toLocaleDateString()}
+                              </td>
+                              <td className="py-2.5 px-4 font-semibold text-white">{routeName}</td>
+                              <td className="py-2.5 px-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold flex items-center gap-1 w-fit ${
+                                  p.status === 'Pagado' ? 'bg-neon-emerald/20 text-neon-emerald' : 'bg-amber-500/20 text-amber-500'
+                                }`}>
+                                  {p.status === 'Pagado' ? <CheckCircle size={10} /> : <Clock size={10} />}
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono font-bold text-white">
+                                C$ {p.amount.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Explanation info block */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="glass-panel p-5 rounded-xl border border-white/5 space-y-4">
+              <h3 className="font-bold text-white text-sm">Resumen de Comisiones</h3>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Las comisiones son calculadas de forma automática al momento de registrar ventas asignadas a una ruta.
+              </p>
+              <div className="p-3 bg-[#0d0d18] border border-white/5 rounded-lg text-xs space-y-2">
+                <div className="flex justify-between text-gray-400">
+                  <span>Comisión Total Acumulada:</span>
+                  <span className="font-mono text-white">
+                    C$ {Object.values(routeEarnedMap).reduce((a, b) => a + b, 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-neon-emerald">
+                  <span>Monto Pagado:</span>
+                  <span className="font-mono">
+                    C$ {Object.values(routePaidMap).reduce((a, b) => a + b, 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="border-t border-white/5 my-1" />
+                <div className="flex justify-between text-amber-400 font-bold">
+                  <span>Balance Pendiente:</span>
+                  <span className="font-mono">
+                    C$ {Math.max(0, Object.values(routeEarnedMap).reduce((a, b) => a + b, 0) - Object.values(routePaidMap).reduce((a, b) => a + b, 0)).toFixed(2)}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -728,6 +994,94 @@ export default function Reportes() {
                   className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-black font-bold rounded-lg transition text-sm"
                 >
                   Guardar Gasto
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Registrar Pago de Comisión Modal ────────────────────────── */}
+      {showCommissionModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-sm rounded-xl p-6 shadow-2xl relative border border-amber-500/20">
+            <h2 className="text-lg font-bold text-white mb-1">Registrar Pago de Comisión</h2>
+            <p className="text-gray-400 text-xs mb-4">Ingrese un desembolso para liquidar comisiones de una ruta.</p>
+            <form onSubmit={handleRegisterCommissionPayment} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Seleccionar Ruta *</label>
+                <select
+                  required
+                  value={newPayment.route_id}
+                  onChange={(e) => setNewPayment({ ...newPayment, route_id: e.target.value })}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm"
+                >
+                  <option value="">Seleccione una ruta...</option>
+                  {routes.map(r => {
+                    const earned = routeEarnedMap[r.id] || 0;
+                    const paid = routePaidMap[r.id] || 0;
+                    const pending = earned - paid;
+                    const collabName = collaborators[r.collaborator_id] || 'Sin asignar';
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {r.name} — {collabName} (Pendiente: C$ {pending.toFixed(2)})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Monto del Pago (C$) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  min="0.01"
+                  value={newPayment.amount}
+                  onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
+                  placeholder="0.00"
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Fecha de Transacción *</label>
+                <input
+                  type="date"
+                  required
+                  value={newPayment.payment_date}
+                  onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Estado de Pago</label>
+                <select
+                  value={newPayment.status}
+                  onChange={(e) => setNewPayment({ ...newPayment, status: e.target.value })}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm"
+                >
+                  <option value="Pagado">Pagado</option>
+                  <option value="Pendiente de pago">Pendiente de pago</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCommissionModal(false)}
+                  className="px-4 py-2 border border-white/10 rounded-lg text-gray-400 hover:bg-white/5 transition text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPayment}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg transition text-sm disabled:opacity-50"
+                >
+                  {savingPayment ? 'Guardando...' : 'Guardar Pago'}
                 </button>
               </div>
             </form>
