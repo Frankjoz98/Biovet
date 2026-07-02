@@ -985,6 +985,73 @@ export default function Caja() {
         </div>
       )}
 
+      {/* Quick-Add Expense Modal */}
+      {showExpenseModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-sm rounded-xl p-6 shadow-2xl relative border border-rose-500/20">
+            <h2 className="text-lg font-bold text-white mb-1">Registrar Gasto</h2>
+            <p className="text-gray-400 text-xs mb-4">Ingrese un egreso de caja para mantener el balance neto.</p>
+            <form onSubmit={handleSaveExpense} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Descripción del Gasto *</label>
+                <input
+                  type="text"
+                  required
+                  value={expenseForm.description}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                  placeholder="Ej: Pago de Luz local"
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Monto (C$) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  min="0.01"
+                  value={expenseForm.amount}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                  placeholder="0.00"
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Categoría</label>
+                <select
+                  value={expenseForm.category}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm"
+                >
+                  {EXPENSE_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExpenseModal(false)}
+                  className="px-4 py-2 border border-white/10 rounded-lg text-gray-400 hover:bg-white/5 transition text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingExpense}
+                  className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-black font-bold rounded-lg transition text-sm disabled:opacity-50"
+                >
+                  {savingExpense ? 'Guardando...' : 'Guardar Gasto'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Printable Receipt Modal — Thermal 80mm Format */}
       {receiptData && (
         <>
@@ -1131,6 +1198,7 @@ export default function Caja() {
         </>
       )}
 
+    </div>
     </div>
   );
 }
