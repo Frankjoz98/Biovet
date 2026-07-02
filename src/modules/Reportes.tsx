@@ -14,7 +14,6 @@ import {
   Coins,
   Lock,
   User,
-  Calendar,
   ShieldAlert,
   Loader2
 } from 'lucide-react';
@@ -423,7 +422,7 @@ export default function Reportes() {
             </div>
 
             {/* Ganancias */}
-            <div className="glass-panel p-5 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow border-neon-emerald/20 bg-neon-emerald/5">
+            <div className="glass-panel p-5 rounded-xl border flex items-center justify-between shadow-card-glow border-neon-emerald/20 bg-neon-emerald/5">
               <div className="space-y-1">
                 <span className="text-neon-emerald text-xs font-semibold uppercase block">Utilidad Neta</span>
                 <span className="text-2xl font-black font-mono text-neon-emerald">C$ {summary.netProfit.toFixed(2)}</span>
@@ -922,7 +921,7 @@ export default function Reportes() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1">
+                <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1">
                   <Lock size={10} /> Contraseña del Propietario
                 </label>
                 <input
