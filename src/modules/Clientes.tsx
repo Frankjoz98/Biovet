@@ -148,7 +148,7 @@ export default function Clientes() {
     }
 
     if (abonoAmount > selectedCredit.remaining_amount) {
-      alert(`El monto no puede exceder la deuda del crédito ($${selectedCredit.remaining_amount.toFixed(2)}).`);
+      alert(`El monto no puede exceder la deuda del crédito (C$ ${selectedCredit.remaining_amount.toFixed(2)}).`);
       return;
     }
 
@@ -317,62 +317,62 @@ export default function Clientes() {
                             <span className="text-gray-500 text-xs">{c.email || 'Sin correo'}</span>
                           </td>
                           <td className="py-4 px-6 font-mono text-gray-300">{c.phone || '—'}</td>
-                          <td className="py-4 px-6 text-right font-mono">${c.credit_limit.toFixed(2)}</td>
-                          <td className={`py-4 px-6 text-right font-mono font-bold ${isOverLimit ? 'text-rose-500' : hasDebt ? 'text-amber-500' : 'text-neon-emerald'}`}>
-                            ${c.current_debt.toFixed(2)}
-                          </td>
-                          <td className="py-4 px-6 text-center" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => startEdit(c)}
-                              className="p-1.5 hover:bg-neon-blue/10 rounded-lg text-neon-blue transition"
-                              title="Editar"
-                            >
-                              <Edit size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Credit Details Panel (Right Sidebar) */}
-      <div className="space-y-6">
-        {selectedClient ? (
-          <div className="glass-panel rounded-xl p-6 shadow-card-glow space-y-6 border border-neon-blue/20">
-            {/* Header info */}
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-xl font-bold text-white">{selectedClient.name}</h2>
-                <p className="text-gray-400 text-xs mt-1">Detalle de Créditos y Pagos</p>
-              </div>
-              <button 
-                onClick={() => setSelectedClient(null)} 
-                className="p-1 text-gray-500 hover:text-white rounded-lg hover:bg-white/5 transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Credit Progress Cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-[#0d0d18] border border-white/5 p-4 rounded-lg">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Techo Crédito</span>
-                <span className="text-xl font-bold font-mono text-white block mt-1">
-                  ${selectedClient.credit_limit.toFixed(2)}
-                </span>
-              </div>
-              <div className="bg-[#0d0d18] border border-white/5 p-4 rounded-lg">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Deuda Total</span>
-                <span className="text-xl font-bold font-mono text-amber-500 block mt-1">
-                  ${selectedClient.current_debt.toFixed(2)}
-                </span>
-              </div>
+                           <td className="py-4 px-6 text-right font-mono">C$ {c.credit_limit.toFixed(2)}</td>
+                           <td className={`py-4 px-6 text-right font-mono font-bold ${isOverLimit ? 'text-rose-500' : hasDebt ? 'text-amber-500' : 'text-neon-emerald'}`}>
+                             C$ {c.current_debt.toFixed(2)}
+                           </td>
+                           <td className="py-4 px-6 text-center" onClick={(e) => e.stopPropagation()}>
+                             <button
+                               onClick={() => startEdit(c)}
+                               className="p-1.5 hover:bg-neon-blue/10 rounded-lg text-neon-blue transition"
+                               title="Editar"
+                             >
+                               <Edit size={16} />
+                             </button>
+                           </td>
+                         </tr>
+                       );
+                     })
+                   )}
+                 </tbody>
+               </table>
+             </div>
+           </div>
+         )}
+       </div>
+ 
+       {/* Credit Details Panel (Right Sidebar) */}
+       <div className="space-y-6">
+         {selectedClient ? (
+           <div className="glass-panel rounded-xl p-6 shadow-card-glow space-y-6 border border-neon-blue/20">
+             {/* Header info */}
+             <div className="flex justify-between items-start">
+               <div>
+                 <h2 className="text-xl font-bold text-white">{selectedClient.name}</h2>
+                 <p className="text-gray-400 text-xs mt-1">Detalle de Créditos y Pagos</p>
+               </div>
+               <button 
+                 onClick={() => setSelectedClient(null)} 
+                 className="p-1 text-gray-500 hover:text-white rounded-lg hover:bg-white/5 transition"
+               >
+                 <X size={18} />
+               </button>
+             </div>
+ 
+             {/* Credit Progress Cards */}
+             <div className="grid grid-cols-2 gap-4">
+               <div className="bg-[#0d0d18] border border-white/5 p-4 rounded-lg">
+                 <span className="text-gray-400 text-xs font-semibold uppercase block">Techo Crédito</span>
+                 <span className="text-xl font-bold font-mono text-white block mt-1">
+                   C$ {selectedClient.credit_limit.toFixed(2)}
+                 </span>
+               </div>
+               <div className="bg-[#0d0d18] border border-white/5 p-4 rounded-lg">
+                 <span className="text-gray-400 text-xs font-semibold uppercase block">Deuda Total</span>
+                 <span className="text-xl font-bold font-mono text-amber-500 block mt-1">
+                   C$ {selectedClient.current_debt.toFixed(2)}
+                 </span>
+               </div>
             </div>
 
             {/* Credit list */}
@@ -396,7 +396,7 @@ export default function Clientes() {
                               {new Date(credit.created_at).toLocaleDateString()}
                             </span>
                             <span className="text-xs text-gray-400 font-semibold block mt-0.5">
-                              Total Crédito: ${credit.total_amount.toFixed(2)}
+                              Total Crédito: C$ {credit.total_amount.toFixed(2)}
                             </span>
                           </div>
                           <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${isPaid ? 'bg-neon-emerald/20 text-neon-emerald border border-neon-emerald/30' : 'bg-amber-500/20 text-amber-500 border border-amber-500/30'}`}>
@@ -405,7 +405,7 @@ export default function Clientes() {
                         </div>
                         <div className="flex justify-between items-center bg-white/2 p-2 rounded text-xs">
                           <span className="text-gray-400">Saldo Restante:</span>
-                          <span className="font-bold text-white font-mono">${credit.remaining_amount.toFixed(2)}</span>
+                          <span className="font-bold text-white font-mono">C$ {credit.remaining_amount.toFixed(2)}</span>
                         </div>
                         {!isPaid && (
                           <div className="flex gap-2 mt-1">
@@ -488,7 +488,7 @@ export default function Clientes() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Límite de Crédito Autorizado ($)</label>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Límite de Crédito Autorizado (C$)</label>
                 <input
                   type="number"
                   required
@@ -529,11 +529,11 @@ export default function Clientes() {
               <div className="bg-[#0d0d18] border border-white/5 p-3 rounded-lg text-xs space-y-1">
                 <div className="flex justify-between text-gray-400">
                   <span>Monto Crédito Inicial:</span>
-                  <span className="font-mono">${selectedCredit.total_amount.toFixed(2)}</span>
+                  <span className="font-mono">C$ {selectedCredit.total_amount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-white font-semibold">
                   <span>Saldo Deudor Actual:</span>
-                  <span className="font-mono text-amber-500">${selectedCredit.remaining_amount.toFixed(2)}</span>
+                  <span className="font-mono text-amber-500">C$ {selectedCredit.remaining_amount.toFixed(2)}</span>
                 </div>
               </div>
 

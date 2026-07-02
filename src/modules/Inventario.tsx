@@ -328,8 +328,8 @@ export default function Inventario({ userRole }: InventarioProps) {
                             {p.category || 'Otros'}
                           </span>
                         </td>
-                        {userRole === 'admin' && <td className="py-3 px-4 text-right font-mono">${p.cost.toFixed(2)}</td>}
-                        <td className="py-3 px-4 text-right font-mono">${p.price.toFixed(2)}</td>
+                        {userRole === 'admin' && <td className="py-3 px-4 text-right font-mono">C$ {p.cost.toFixed(2)}</td>}
+                        <td className="py-3 px-4 text-right font-mono">C$ {p.price.toFixed(2)}</td>
                         <td className={`py-3 px-4 text-right font-bold font-mono ${isLowStock ? 'text-rose-500' : 'text-neon-emerald'}`}>{p.stock}</td>
                         <td className="py-3 px-4">
                           {isLowStock ? (
@@ -533,7 +533,7 @@ export default function Inventario({ userRole }: InventarioProps) {
               {/* Total summary */}
               <div className="flex justify-between items-center bg-white/2 border border-white/5 rounded-lg px-4 py-3 mt-1">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Factura:</span>
-                <span className="text-lg font-black font-mono text-neon-emerald">${purchaseTotal.toFixed(2)}</span>
+                <span className="text-lg font-black font-mono text-neon-emerald">C$ {purchaseTotal.toFixed(2)}</span>
               </div>
 
               <div className="flex gap-3 justify-end pt-1">

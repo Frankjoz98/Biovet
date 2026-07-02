@@ -41,7 +41,6 @@ export default function Caja() {
   const [showOpenSessionModal, setShowOpenSessionModal] = useState(false);
   const [showCloseSessionModal, setShowCloseSessionModal] = useState(false);
 
-  // Opening session inputs
   const [openSessionForm, setOpenSessionForm] = useState({
     initial_nio: '0',
     initial_usd: '0'
@@ -56,6 +55,22 @@ export default function Caja() {
 
   // Commission categories
   const [commissionsConfig, setCommissionsConfig] = useState<any[]>([]);
+
+  // POS tab: 'store' | 'route'
+  const [posTab, setPosTab] = useState<'store' | 'route'>('store');
+
+  // Routes for route billing
+  const [routes, setRoutes] = useState<{id: string; name: string; collaborator_id: string}[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState<string>('');
+
+  // Top products
+  const [topProducts, setTopProducts] = useState<{product_id: string; name: string; total_qty: number}[]>([]);
+
+  // Expense quick-add
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ description: '', amount: '', category: 'Alquiler' });
+  const [savingExpense, setSavingExpense] = useState(false);
+  const EXPENSE_CATEGORIES = ['Alquiler','Servicios','Compras','Salarios','Transporte','Otros'];
 
   // Receipt modal state
   const [receiptData, setReceiptData] = useState<{
@@ -75,6 +90,8 @@ export default function Caja() {
     checkActiveSession();
     fetchInitialData();
     fetchCommissionsConfig();
+    fetchRoutes();
+    fetchTopProducts();
   }, []);
 
   // Barcode Scanner Listener
@@ -118,13 +135,8 @@ export default function Caja() {
         .maybeSingle();
 
       if (error) throw error;
-      if (data) {
-        setActiveSession(data);
-        setShowOpenSessionModal(false);
-      } else {
-        setActiveSession(null);
-        setShowOpenSessionModal(true);
-      }
+      setActiveSession(data || null);
+      // NO longer auto-pops the open-session modal
     } catch (err: any) {
       console.error('Error checking active cash session:', err.message);
     }
@@ -154,12 +166,67 @@ export default function Caja() {
 
   async function fetchCommissionsConfig() {
     try {
-      const { data } = await supabase
-        .from('bv_category_commissions')
-        .select('*');
+      const { data } = await supabase.from('bv_category_commissions').select('*');
       setCommissionsConfig(data || []);
     } catch (e) {
       console.error('Error loading commissions config:', e);
+    }
+  }
+
+  async function fetchRoutes() {
+    try {
+      const { data } = await supabase.from('bv_routes').select('id, name, collaborator_id').eq('status', 'active');
+      setRoutes(data || []);
+    } catch (e) {
+      console.error('Error loading routes:', e);
+    }
+  }
+
+  async function fetchTopProducts() {
+    try {
+      const { data } = await supabase
+        .from('bv_sale_items')
+        .select('product_id, quantity, bv_products(name)')
+        .limit(200);
+      if (!data) return;
+      const totals: Record<string, { name: string; total_qty: number }> = {};
+      data.forEach((item: any) => {
+        const pid = item.product_id;
+        const name = item.bv_products?.name || 'Desconocido';
+        if (!totals[pid]) totals[pid] = { name, total_qty: 0 };
+        totals[pid].total_qty += item.quantity;
+      });
+      const sorted = Object.entries(totals)
+        .map(([product_id, v]) => ({ product_id, ...v }))
+        .sort((a, b) => b.total_qty - a.total_qty)
+        .slice(0, 5);
+      setTopProducts(sorted);
+    } catch (e) {
+      console.error('Error fetching top products:', e);
+    }
+  }
+
+  async function handleSaveExpense(e: React.FormEvent) {
+    e.preventDefault();
+    if (!expenseForm.description || !expenseForm.amount) {
+      alert('Ingrese descripción y monto.');
+      return;
+    }
+    setSavingExpense(true);
+    try {
+      const { error } = await supabase.from('bv_expenses').insert({
+        description: expenseForm.description,
+        amount: parseFloat(expenseForm.amount),
+        category: expenseForm.category,
+      });
+      if (error) throw error;
+      setShowExpenseModal(false);
+      setExpenseForm({ description: '', amount: '', category: 'Alquiler' });
+      alert('Gasto registrado correctamente.');
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setSavingExpense(false);
     }
   }
 
@@ -294,12 +361,6 @@ export default function Caja() {
   };
 
   const handleCompleteSale = async () => {
-    if (!activeSession) {
-      alert('Debe abrir la caja antes de procesar transacciones.');
-      checkActiveSession();
-      return;
-    }
-
     if (cart.length === 0) {
       alert('El carrito está vacío.');
       return;
@@ -307,6 +368,11 @@ export default function Caja() {
 
     if (paymentMethod === 'credit' && !selectedClient) {
       alert('Debe seleccionar un cliente para realizar una venta al crédito.');
+      return;
+    }
+
+    if (posTab === 'route' && !selectedRouteId) {
+      alert('Debe seleccionar una ruta para la facturación de ruta.');
       return;
     }
 
@@ -356,7 +422,10 @@ export default function Caja() {
           exchange_rate: exchangeRate,
           paid_nio: paidNio,
           paid_usd: paidUsd,
-          cash_session_id: activeSession.id
+          cash_session_id: activeSession?.id || null,
+          sale_type: posTab,
+          route_id: posTab === 'route' ? (selectedRouteId || null) : null,
+          status: 'active',
         })
         .select()
         .single();
@@ -440,8 +509,73 @@ export default function Caja() {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-140px)]">
-      
+    <div className="space-y-4">
+
+      {/* ── Session Status Banner ─────────────────────────────────── */}
+      {!activeSession && (
+        <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
+            <Coins size={14} />
+            <span>Sin turno de caja activo — Las ventas se registrarán sin asociar a un turno.</span>
+          </div>
+          <button
+            onClick={() => setShowOpenSessionModal(true)}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg text-xs transition"
+          >
+            Abrir Caja
+          </button>
+        </div>
+      )}
+
+      {/* ── POS Tabs: Tienda / Ruta ────────────────────────────────── */}
+      <div className="flex items-center gap-2">
+        <div className="flex rounded-lg overflow-hidden border border-white/10">
+          <button
+            onClick={() => setPosTab('store')}
+            className={`px-5 py-2 text-xs font-bold uppercase tracking-wider transition ${
+              posTab === 'store' ? 'bg-neon-blue/20 text-neon-blue' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            🏪 Tienda
+          </button>
+          <button
+            onClick={() => setPosTab('route')}
+            className={`px-5 py-2 text-xs font-bold uppercase tracking-wider transition border-l border-white/10 ${
+              posTab === 'route' ? 'bg-purple-500/20 text-purple-400' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            🚗 Ruta
+          </button>
+        </div>
+
+        {/* Route selector — only visible in route tab */}
+        {posTab === 'route' && (
+          <select
+            value={selectedRouteId}
+            onChange={(e) => setSelectedRouteId(e.target.value)}
+            className="bg-[#0d0d18] border border-purple-500/30 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-purple-400"
+          >
+            <option value="">Seleccionar Ruta...</option>
+            {routes.map(r => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Expense Quick-Add Button */}
+        <button
+          onClick={() => setShowExpenseModal(true)}
+          className="flex items-center gap-1.5 px-3 py-2 border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold rounded-lg text-xs transition"
+        >
+          <ArrowRight size={13} className="rotate-90" />
+          Registrar Gasto
+        </button>
+      </div>
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-200px)]">
+
       {/* Product Selection (Left 2 Columns) */}
       <div className="lg:col-span-2 flex flex-col lg:h-full space-y-4">
         {/* Search */}
@@ -482,6 +616,27 @@ export default function Caja() {
             </button>
           )}
         </div>
+
+        {/* Top Products Strip */}
+        {topProducts.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <span className="text-[10px] font-bold uppercase text-gray-500 shrink-0">Top:</span>
+            {topProducts.map((tp, i) => (
+              <button
+                key={tp.product_id}
+                onClick={() => {
+                  const prod = products.find(p => p.id === tp.product_id);
+                  if (prod) addToCart(prod);
+                }}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 bg-white/3 border border-white/8 rounded-full text-[10px] text-gray-300 hover:border-neon-blue/40 hover:text-neon-blue transition"
+              >
+                <span className="font-bold text-neon-blue">#{i+1}</span>
+                {tp.name}
+                <span className="text-gray-500">·{tp.total_qty}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Product Grid */}
         <div className="flex-1 overflow-y-auto pr-1 max-h-[55vh] lg:max-h-none">
