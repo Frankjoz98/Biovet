@@ -244,7 +244,6 @@ export default function Caja({ currentUserId }: CajaProps) {
       setRouteClosureSummary(data as RouteClosingSummary);
       setActiveRouteClosure(null);
       setShowRouteClosureModal(true);
-      setRouteCloseNotes('');
       // Refresh inventory after route close
       fetchInitialData();
       toast.success('Jornada de ruta finalizada.');
