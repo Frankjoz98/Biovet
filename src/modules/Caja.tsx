@@ -999,8 +999,9 @@ export default function Caja({ currentUserId }: CajaProps) {
           </button>
         </div>
       </div>
+    </div>
 
-      {/* Opening Session Modal */}
+    {/* Opening Session Modal */}
       {showOpenSessionModal && (
         <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-sm rounded-xl p-6 border border-neon-blue/20 shadow-2xl">
@@ -1287,8 +1288,6 @@ export default function Caja({ currentUserId }: CajaProps) {
         </>
       )}
 
-    </div>
-
       {/* ── Open Route Journey Modal ────────────────────────────────── */}
       {showOpenRouteModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1425,7 +1424,6 @@ export default function Caja({ currentUserId }: CajaProps) {
         </div>
       )}
 
-    </div>
     </div>
   );
 }
