@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins } from 'lucide-react';
+import { toast } from '../lib/toast';
+import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins, Navigation, TrendingUp, Award, CheckCircle } from 'lucide-react';
 import type { Product } from './Inventario';
 import type { Client } from './Clientes';
 
@@ -17,7 +18,36 @@ interface CashSession {
   status: string;
 }
 
-export default function Caja() {
+interface CategoryCommission {
+  id: string;
+  category_name: string;
+  percentage: number;
+}
+
+interface RouteClosing {
+  id: string;
+  route_id: string;
+  collaborator_id: string;
+  closing_date: string;
+  status: 'open' | 'closed';
+  opened_at: string;
+}
+
+interface RouteClosingSummary {
+  total_sales: number;
+  total_commission: number;
+  net_profit: number;
+  cash_collected: number;
+  credit_sales: number;
+  transfer_sales: number;
+  breakdown: { category: string; sales: number; commission_amount: number }[];
+}
+
+interface CajaProps {
+  currentUserId?: string;
+}
+
+export default function Caja({ currentUserId }: CajaProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,8 +78,8 @@ export default function Caja() {
     notes: ''
   });
 
-  // Commission categories
-  const [commissionsConfig, setCommissionsConfig] = useState<any[]>([]);
+  // Commission categories — typed properly
+  const [commissionsConfig, setCommissionsConfig] = useState<CategoryCommission[]>([]);
 
   // POS tab: 'store' | 'route'
   const [posTab, setPosTab] = useState<'store' | 'route'>('store');
@@ -58,8 +88,24 @@ export default function Caja() {
   const [routes, setRoutes] = useState<{id: string; name: string; collaborator_id: string}[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string>('');
 
+  // Route Closure (Jornada de Ruta) State
+  const [activeRouteClosure, setActiveRouteClosure] = useState<RouteClosing | null>(null);
+  const [showOpenRouteModal, setShowOpenRouteModal] = useState(false);
+  const [showRouteClosureModal, setShowRouteClosureModal] = useState(false);
+  const [routeClosureSummary, setRouteClosureSummary] = useState<RouteClosingSummary | null>(null);
+  const [closingRoute, setClosingRoute] = useState(false);
+  const [routeCloseNotes, setRouteCloseNotes] = useState('');
+
   // Top products
   const [topProducts, setTopProducts] = useState<{product_id: string; name: string; total_qty: number}[]>([]);
+
+  // Business settings state
+  const [businessSettings, setBusinessSettings] = useState({
+    name: 'BIOVET',
+    phone: '2222-0000',
+    website: 'a-biovet.com',
+    address: ''
+  });
 
   // Expense quick-add
   const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -86,6 +132,15 @@ export default function Caja() {
     fetchRoutes();
     fetchTopProducts();
   }, []);
+
+  // When route changes, check for active route closure
+  useEffect(() => {
+    if (selectedRouteId) {
+      checkActiveRouteClosure(selectedRouteId);
+    } else {
+      setActiveRouteClosure(null);
+    }
+  }, [selectedRouteId]);
 
   // Barcode Scanner Listener
   useEffect(() => {
@@ -125,13 +180,79 @@ export default function Caja() {
         .from('bv_cash_sessions')
         .select('*')
         .eq('status', 'open')
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
       setActiveSession(data || null);
-      // NO longer auto-pops the open-session modal
     } catch (err: any) {
       console.error('Error checking active cash session:', err.message);
+    }
+  }
+
+  async function checkActiveRouteClosure(routeId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('bv_route_closings')
+        .select('*')
+        .eq('route_id', routeId)
+        .eq('status', 'open')
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      setActiveRouteClosure(data || null);
+    } catch (err: any) {
+      console.error('Error checking active route closure:', err.message);
+    }
+  }
+
+  async function handleOpenRouteClosure() {
+    if (!selectedRouteId || !currentUserId) {
+      toast.warning('Debes seleccionar una ruta y estar autenticado para iniciar la jornada.');
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('bv_route_closings')
+        .insert({
+          route_id: selectedRouteId,
+          collaborator_id: currentUserId,
+          closing_date: new Date().toISOString().substring(0, 10),
+          status: 'open',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      setActiveRouteClosure(data);
+      setShowOpenRouteModal(false);
+      toast.success('Jornada de ruta iniciada con éxito.');
+    } catch (err: any) {
+      toast.error('Error abriendo jornada de ruta: ' + err.message);
+    }
+  }
+
+  async function handleCloseRouteClosure() {
+    if (!activeRouteClosure) return;
+    setClosingRoute(true);
+    try {
+      const { data, error } = await supabase
+        .rpc('bv_close_route', { p_route_closing_id: activeRouteClosure.id });
+
+      if (error) throw error;
+
+      setRouteClosureSummary(data as RouteClosingSummary);
+      setActiveRouteClosure(null);
+      setShowRouteClosureModal(true);
+      setRouteCloseNotes('');
+      // Refresh inventory after route close
+      fetchInitialData();
+      toast.success('Jornada de ruta finalizada.');
+    } catch (err: any) {
+      toast.error('Error cerrando jornada de ruta: ' + err.message);
+    } finally {
+      setClosingRoute(false);
     }
   }
 
@@ -147,6 +268,25 @@ export default function Caja() {
         .from('bv_clients')
         .select('*')
         .order('name', { ascending: true });
+
+      // Fetch business settings dynamically
+      const { data: settingsData } = await supabase
+        .from('bv_settings')
+        .select('*');
+
+      if (settingsData) {
+        const settingsMap: Record<string, string> = {};
+        settingsData.forEach(item => {
+          settingsMap[item.key] = item.value;
+        });
+
+        setBusinessSettings({
+          name: settingsMap['business_name'] || 'BIOVET',
+          phone: settingsMap['business_phone'] || '2222-0000',
+          website: settingsMap['business_website'] || 'a-biovet.com',
+          address: settingsMap['business_address'] || ''
+        });
+      }
 
       setProducts(prodData || []);
       setClients(clientData || []);
@@ -202,7 +342,7 @@ export default function Caja() {
   async function handleSaveExpense(e: React.FormEvent) {
     e.preventDefault();
     if (!expenseForm.description || !expenseForm.amount) {
-      alert('Ingrese descripción y monto.');
+      toast.warning('Ingrese descripción y monto del gasto.');
       return;
     }
     setSavingExpense(true);
@@ -215,9 +355,9 @@ export default function Caja() {
       if (error) throw error;
       setShowExpenseModal(false);
       setExpenseForm({ description: '', amount: '', category: 'Alquiler' });
-      alert('Gasto registrado correctamente.');
+      toast.success('Gasto registrado correctamente.');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      toast.error('Error al registrar gasto: ' + err.message);
     } finally {
       setSavingExpense(false);
     }
@@ -241,9 +381,9 @@ export default function Caja() {
       if (error) throw error;
       setActiveSession(data);
       setShowOpenSessionModal(false);
-      alert('Caja chica abierta con éxito');
+      toast.success('Caja chica abierta con éxito');
     } catch (err: any) {
-      alert('Error abriendo caja: ' + err.message);
+      toast.error('Error abriendo caja: ' + err.message);
     }
   }
 
@@ -281,16 +421,16 @@ export default function Caja() {
       setActiveSession(null);
       setShowCloseSessionModal(false);
       setCloseSessionForm({ real_nio: '', notes: '' });
-      alert('Caja cerrada correctamente. Registro archivado.');
+      toast.success('Caja cerrada correctamente. Registro archivado.');
       checkActiveSession();
     } catch (err: any) {
-      alert('Error cerrando caja: ' + err.message);
+      toast.error('Error cerrando caja: ' + err.message);
     }
   }
 
   const addToCart = (product: Product) => {
     if (product.stock <= 0) {
-      alert('¡Producto sin stock disponible!');
+      toast.warning('¡Producto sin stock disponible!');
       return;
     }
 
@@ -298,7 +438,7 @@ export default function Caja() {
     if (existingIndex > -1) {
       const newQty = cart[existingIndex].quantity + 1;
       if (newQty > product.stock) {
-        alert(`No hay suficiente stock. Disponible: ${product.stock}`);
+        toast.warning(`No hay suficiente stock. Disponible: ${product.stock}`);
         return;
       }
       const newCart = [...cart];
@@ -319,7 +459,7 @@ export default function Caja() {
     }
 
     if (quantity > item.product.stock) {
-      alert(`No hay suficiente stock. Disponible: ${item.product.stock}`);
+      toast.warning(`No hay suficiente stock. Disponible: ${item.product.stock}`);
       return;
     }
 
@@ -337,17 +477,22 @@ export default function Caja() {
 
   const handleCompleteSale = async () => {
     if (cart.length === 0) {
-      alert('El carrito está vacío.');
+      toast.warning('El carrito está vacío.');
+      return;
+    }
+
+    if (posTab === 'store' && !activeSession) {
+      toast.warning('Debe abrir la caja primero para facturar en tienda.');
       return;
     }
 
     if (paymentMethod === 'credit' && !selectedClient) {
-      alert('Debe seleccionar un cliente para realizar una venta al crédito.');
+      toast.warning('Debe seleccionar un cliente para realizar una venta al crédito.');
       return;
     }
 
     if (posTab === 'route' && !selectedRouteId) {
-      alert('Debe seleccionar una ruta para la facturación de ruta.');
+      toast.warning('Debe seleccionar una ruta para la facturación de ruta.');
       return;
     }
 
@@ -355,7 +500,7 @@ export default function Caja() {
     const paidNio = parseFloat(cashReceivedNio) || 0;
 
     if (paymentMethod === 'cash' && paidNio < convertedTotal) {
-      alert(`El dinero recibido es menor que el total de la venta.`);
+      toast.warning(`El dinero recibido es menor que el total de la venta.`);
       return;
     }
 
@@ -376,7 +521,8 @@ export default function Caja() {
     }
 
     try {
-      // 1. Insert into bv_sales (route sales are decoupled from active session)
+      // 1. Insert into bv_sales
+      // Route sales link to active route closure; store sales link to active cash session
       const { data: saleData, error: saleError } = await supabase
         .from('bv_sales')
         .insert({
@@ -391,6 +537,8 @@ export default function Caja() {
           cash_session_id: posTab === 'store' ? (activeSession?.id || null) : null,
           sale_type: posTab,
           route_id: posTab === 'route' ? (selectedRouteId || null) : null,
+          route_closing_id: posTab === 'route' ? (activeRouteClosure?.id || null) : null,
+          user_id: currentUserId || null,
           status: 'active',
         })
         .select()
@@ -421,11 +569,12 @@ export default function Caja() {
 
         if (itemError) throw itemError;
 
-        // Decrement stock in database
+        // Decrement stock atomically via RPC (fixes race condition)
         const { error: stockError } = await supabase
-          .from('bv_products')
-          .update({ stock: item.product.stock - item.quantity })
-          .eq('id', item.product.id);
+          .rpc('bv_decrement_stock', {
+            p_product_id: item.product.id,
+            p_quantity: item.quantity
+          });
 
         if (stockError) throw stockError;
       }
@@ -458,7 +607,7 @@ export default function Caja() {
       // Refresh inventory
       fetchInitialData();
     } catch (err: any) {
-      alert('Error procesando la venta: ' + err.message);
+      toast.error('Error procesando la venta: ' + err.message);
     }
   };
 
@@ -475,7 +624,7 @@ export default function Caja() {
     <div className="space-y-4">
 
       {/* ── Session Status Banner ─────────────────────────────────── */}
-      {!activeSession && (
+      {posTab === 'store' && !activeSession && (
         <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
           <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
             <Coins size={14} />
@@ -486,6 +635,38 @@ export default function Caja() {
             className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg text-xs transition"
           >
             Abrir Caja
+          </button>
+        </div>
+      )}
+
+      {/* ── Route Journey Banner ──────────────────────────────────── */}
+      {posTab === 'route' && selectedRouteId && !activeRouteClosure && (
+        <div className="flex items-center justify-between bg-purple-500/10 border border-purple-500/30 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 text-purple-400 text-xs font-semibold">
+            <Navigation size={14} />
+            <span>Sin jornada de ruta activa — Inicia la jornada para vincular las ventas al cierre del día.</span>
+          </div>
+          <button
+            onClick={() => setShowOpenRouteModal(true)}
+            className="px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white font-bold rounded-lg text-xs transition"
+          >
+            Iniciar Jornada
+          </button>
+        </div>
+      )}
+
+      {posTab === 'route' && activeRouteClosure && (
+        <div className="flex items-center justify-between bg-purple-500/10 border border-purple-500/30 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 text-purple-300 text-xs font-semibold">
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-ping" />
+            <span>Jornada activa desde {new Date(activeRouteClosure.opened_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} — Las ventas de ruta se están registrando en este cierre.</span>
+          </div>
+          <button
+            onClick={handleCloseRouteClosure}
+            disabled={closingRoute}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition disabled:opacity-60"
+          >
+            {closingRoute ? 'Cerrando...' : 'Cerrar Jornada'}
           </button>
         </div>
       )}
@@ -537,10 +718,10 @@ export default function Caja() {
         </button>
       </div>
 
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-200px)]">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:h-[calc(100vh-200px)]">
 
-      {/* Product Selection (Left 2 Columns) */}
-      <div className="lg:col-span-2 flex flex-col lg:h-full space-y-4">
+      {/* Product Selection */}
+      <div className="flex flex-col lg:h-full space-y-4">
         {/* Search */}
         <div className="flex gap-3">
           <div className="relative flex-1">
@@ -561,22 +742,25 @@ export default function Caja() {
           >
             <RefreshCw size={18} />
           </button>
-          {activeSession ? (
-            <button
-              onClick={() => setShowCloseSessionModal(true)}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5"
-            >
-              <Coins size={14} />
-              Cierre Caja
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowOpenSessionModal(true)}
-              className="px-4 py-2 bg-neon-emerald text-black font-bold rounded-lg text-xs transition flex items-center gap-1.5"
-            >
-              <Coins size={14} />
-              Apertura Caja
-            </button>
+          
+          {posTab === 'store' && (
+            activeSession ? (
+              <button
+                onClick={() => setShowCloseSessionModal(true)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5"
+              >
+                <Coins size={14} />
+                Cierre Caja
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowOpenSessionModal(true)}
+                className="px-4 py-2 bg-neon-emerald text-black font-bold rounded-lg text-xs transition flex items-center gap-1.5"
+              >
+                <Coins size={14} />
+                Apertura Caja
+              </button>
+            )
           )}
         </div>
 
@@ -991,10 +1175,14 @@ export default function Caja() {
                   {/* Header */}
                   <div style={{ textAlign: 'center', marginBottom: '6px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '1px', textTransform: 'uppercase' }}>
-                      BIOVET
+                      {businessSettings.name}
                     </div>
-                    <div style={{ fontSize: '10px' }}>Veterinaria & Agropecuaria</div>
-                    <div style={{ fontSize: '10px' }}>Tel: 2222-0000 | a-biovet.com</div>
+                    {businessSettings.address && (
+                      <div style={{ fontSize: '10px' }}>{businessSettings.address}</div>
+                    )}
+                    <div style={{ fontSize: '10px' }}>
+                      Tel: {businessSettings.phone} | {businessSettings.website}
+                    </div>
                     <div style={{ fontSize: '10px', marginTop: '2px' }}>{receiptData.date}</div>
                   </div>
 
@@ -1097,6 +1285,144 @@ export default function Caja() {
             </div>
           </div>
         </>
+      )}
+
+    </div>
+
+      {/* ── Open Route Journey Modal ────────────────────────────────── */}
+      {showOpenRouteModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-sm rounded-xl p-6 border border-purple-500/20 shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <Navigation className="text-purple-400" size={20} />
+              Iniciar Jornada de Ruta
+            </h2>
+            <p className="text-xs text-gray-400 mb-5">
+              Al iniciar la jornada, todas las ventas de esta ruta quedarán vinculadas a este cierre. Al terminar el día presiona "Cerrar Jornada" para obtener el resumen de comisiones y ganancia neta.
+            </p>
+            <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 mb-5 text-xs text-purple-300">
+              <span className="font-bold block">Ruta seleccionada:</span>
+              <span className="text-white font-semibold">{routes.find(r => r.id === selectedRouteId)?.name || selectedRouteId}</span>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowOpenRouteModal(false)}
+                className="flex-1 px-4 py-2.5 border border-white/10 rounded-lg text-gray-400 hover:bg-white/5 transition text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleOpenRouteClosure}
+                className="flex-1 py-2.5 bg-purple-500 hover:bg-purple-600 text-white font-bold uppercase rounded-lg text-xs transition"
+              >
+                Iniciar Jornada
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Route Closure Summary Modal ─────────────────────────────── */}
+      {showRouteClosureModal && routeClosureSummary && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-md rounded-xl border border-purple-500/20 shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="p-5 border-b border-white/5 flex justify-between items-start">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Award className="text-amber-400" size={20} />
+                  Cierre de Jornada de Ruta
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {routes.find(r => r.id === selectedRouteId)?.name} — {new Date().toLocaleDateString()}
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowRouteClosureModal(false); setRouteClosureSummary(null); }}
+                className="text-gray-500 hover:text-white transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Totals */}
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-[#0d0d18] border border-white/5 p-3 rounded-lg text-center">
+                  <span className="text-gray-400 text-[10px] font-bold uppercase block">Efectivo</span>
+                  <span className="text-white font-mono font-bold text-sm block mt-1">C$ {routeClosureSummary.cash_collected.toFixed(2)}</span>
+                </div>
+                <div className="bg-[#0d0d18] border border-white/5 p-3 rounded-lg text-center">
+                  <span className="text-gray-400 text-[10px] font-bold uppercase block">Crédito</span>
+                  <span className="text-amber-400 font-mono font-bold text-sm block mt-1">C$ {routeClosureSummary.credit_sales.toFixed(2)}</span>
+                </div>
+                <div className="bg-[#0d0d18] border border-white/5 p-3 rounded-lg text-center">
+                  <span className="text-gray-400 text-[10px] font-bold uppercase block">Transfer.</span>
+                  <span className="text-neon-blue font-mono font-bold text-sm block mt-1">C$ {routeClosureSummary.transfer_sales.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Commission breakdown by category */}
+              <div className="bg-[#0d0d18] border border-white/5 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 border-b border-white/5 bg-white/2">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Comisiones por Categoría de Producto</span>
+                </div>
+                <div className="divide-y divide-white/5">
+                  {routeClosureSummary.breakdown.length === 0 ? (
+                    <p className="text-gray-500 text-xs py-4 text-center">Sin ventas registradas en esta jornada.</p>
+                  ) : (
+                    routeClosureSummary.breakdown.map((row) => (
+                      <div key={row.category} className="flex justify-between items-center px-4 py-2.5 text-xs">
+                        <div>
+                          <span className="text-white font-semibold block">{row.category}</span>
+                          <span className="text-gray-500 font-mono">Ventas: C$ {row.sales.toFixed(2)}</span>
+                        </div>
+                        <span className="font-bold font-mono text-amber-400">C$ {row.commission_amount.toFixed(2)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Summary footer */}
+              <div className="space-y-2 pt-1">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-400">Total Vendido:</span>
+                  <span className="font-mono font-bold text-white">C$ {routeClosureSummary.total_sales.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-amber-400 font-semibold">Total Comisiones Vendedor:</span>
+                  <span className="font-mono font-bold text-amber-400">− C$ {routeClosureSummary.total_commission.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center py-2.5 px-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                  <span className="text-neon-emerald font-bold text-sm flex items-center gap-1.5">
+                    <TrendingUp size={14} />
+                    Ganancia Neta Veterinaria:
+                  </span>
+                  <span className="font-mono font-black text-neon-emerald text-lg">C$ {routeClosureSummary.net_profit.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-5 pb-5 flex gap-3">
+              <button
+                onClick={() => window.print()}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-white/10 rounded-lg text-gray-400 hover:bg-white/5 transition text-sm"
+              >
+                <Printer size={14} />
+                Imprimir Resumen
+              </button>
+              <button
+                onClick={() => { setShowRouteClosureModal(false); setRouteClosureSummary(null); }}
+                className="flex-1 py-2.5 bg-neon-emerald text-black font-bold rounded-lg transition text-sm flex items-center justify-center gap-2"
+              >
+                <CheckCircle size={14} />
+                Listo
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

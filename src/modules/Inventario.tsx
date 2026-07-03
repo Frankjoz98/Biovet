@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import { Plus, Search, AlertTriangle, FileText, Edit, RefreshCw, Trash2, PackagePlus, Tag } from 'lucide-react';
 
 export interface Product {
@@ -90,7 +91,7 @@ export default function Inventario({ userRole }: InventarioProps) {
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!newProduct.code || !newProduct.name || !newProduct.cost || !newProduct.price) {
-      alert('Por favor complete todos los campos obligatorios.');
+      toast.warning('Por favor complete todos los campos obligatorios.');
       return;
     }
 
@@ -108,9 +109,11 @@ export default function Inventario({ userRole }: InventarioProps) {
       if (editingProduct) {
         const { error } = await supabase.from('bv_products').update(payload).eq('id', editingProduct.id);
         if (error) throw error;
+        toast.success('Producto actualizado con éxito.');
       } else {
         const { error } = await supabase.from('bv_products').insert(payload);
         if (error) throw error;
+        toast.success('Producto agregado con éxito.');
       }
 
       setShowAddModal(false);
@@ -118,7 +121,7 @@ export default function Inventario({ userRole }: InventarioProps) {
       setNewProduct({ code: '', name: '', cost: '', price: '', stock: '0', min_stock: '5', category: 'Otros' });
       fetchProducts();
     } catch (err: any) {
-      alert('Error guardando producto: ' + err.message);
+      toast.error('Error guardando producto: ' + err.message);
     }
   }
 
@@ -156,7 +159,7 @@ export default function Inventario({ userRole }: InventarioProps) {
     // Validate all lines have product, quantity, cost
     const valid = purchaseItems.every(i => i.product_id && i.quantity && i.cost);
     if (!valid || purchaseItems.length === 0) {
-      alert('Todos los ítems deben tener producto, cantidad y costo.');
+      toast.warning('Todos los ítems deben tener producto, cantidad y costo.');
       return;
     }
 
@@ -205,9 +208,9 @@ export default function Inventario({ userRole }: InventarioProps) {
       setPurchaseHeader({ invoice_number: '', supplier_name: '' });
       setPurchaseItems([{ ...EMPTY_PURCHASE_ITEM }]);
       fetchProducts();
-      alert(`Compra registrada. ${purchaseItems.length} producto(s) actualizados.`);
+      toast.success(`Compra registrada. ${purchaseItems.length} producto(s) actualizados.`);
     } catch (err: any) {
-      alert('Error registrando compra: ' + err.message);
+      toast.error('Error registrando compra: ' + err.message);
     } finally {
       setSavingPurchase(false);
     }

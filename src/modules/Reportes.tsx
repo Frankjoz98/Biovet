@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import {
   DollarSign,
   TrendingUp,
@@ -19,7 +20,10 @@ import {
   Calendar,
   Percent,
   CheckCircle,
-  Clock
+  Clock,
+  Navigation,
+  Award,
+  Store
 } from 'lucide-react';
 
 interface Expense {
@@ -42,6 +46,9 @@ interface SaleRow {
   status: string;
   created_at: string;
   bv_clients?: { name: string } | null;
+  sale_type?: string;
+  route_id?: string;
+  user_id?: string;
 }
 
 interface PurchaseRow {
@@ -96,17 +103,48 @@ interface CommissionPayment {
   created_at: string;
 }
 
+interface RouteClosingRow {
+  id: string;
+  route_id: string;
+  collaborator_id: string;
+  closing_date: string;
+  status: 'open' | 'closed';
+  total_sales_nio: number;
+  total_commission_nio: number;
+  net_store_profit_nio: number;
+  cash_collected_nio: number;
+  credit_sales_nio: number;
+  transfer_sales_nio: number;
+  category_breakdown: { category: string; sales: number; commission_amount: number }[];
+  notes: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  bv_routes?: { name: string } | null;
+  bv_collaborators?: { name: string } | null;
+}
+
 export default function Reportes() {
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'financial' | 'sessions' | 'commissions'>('financial');
+  const [activeTab, setActiveTab] = useState<'financial' | 'sessions' | 'route_closings' | 'commissions'>('financial');
 
-  // Financial Summary State
+  // Financial Summary State (global + per channel)
   const [summary, setSummary] = useState({
     totalSales: 0,
+    storeSales: 0,
+    routeSales: 0,
     totalExpenses: 0,
-    totalCogs: 0, // Cost of goods sold
-    netProfit: 0
+    totalCogs: 0,
+    storeCogs: 0,
+    routeCogs: 0,
+    totalCommissions: 0,
+    netProfit: 0,
+    storeProfit: 0,
+    routeNetProfit: 0,
   });
+
+  // Route Closings State
+  const [routeClosings, setRouteClosings] = useState<RouteClosingRow[]>([]);
+  const [selectedRouteClosure, setSelectedRouteClosure] = useState<RouteClosingRow | null>(null);
 
   // Lists state
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -155,25 +193,42 @@ export default function Reportes() {
   const [anulando, setAnulando] = useState(false);
   const [anularError, setAnularError] = useState('');
 
+  // Date filters (defaults to first day of current month to today)
+  const getInitialDates = () => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const firstDay = new Date(y, m, 1).toISOString().substring(0, 10);
+    const lastDay = today.toISOString().substring(0, 10);
+    return { from: firstDay, to: lastDay };
+  };
+
+  const [dateFrom, setDateFrom] = useState(getInitialDates().from);
+  const [dateTo, setDateTo] = useState(getInitialDates().to);
+
   useEffect(() => {
     fetchFinancialData();
-  }, []);
+  }, [dateFrom, dateTo]);
 
   async function fetchFinancialData() {
     setLoading(true);
     try {
-      // 1. Fetch sales
+      const fromTimestamp = `${dateFrom}T00:00:00.000Z`;
+      const toTimestamp = `${dateTo}T23:59:59.999Z`;
+
+      // 1. Fetch sales within date range
       const { data: salesData } = await supabase
         .from('bv_sales')
         .select('*, bv_clients(name)')
+        .gte('created_at', fromTimestamp)
+        .lte('created_at', toTimestamp)
         .order('created_at', { ascending: false });
 
-      // 2. Fetch sale items to calculate COGS (only for active, non-voided sales)
-      const activeSaleIds = (salesData || [])
-        .filter(s => s.status !== 'anulada')
-        .map(s => s.id);
+      const activeSales = (salesData || []).filter(s => s.status !== 'anulada');
+      const activeSaleIds = activeSales.map(s => s.id);
 
-      let saleItemsData: any[] = [];
+      // 2. Fetch sale items (COGS + commissions)
+      let saleItemsData: { sale_id: string; quantity: number; unit_cost: number; commission_amount: number }[] = [];
       if (activeSaleIds.length > 0) {
         const { data } = await supabase
           .from('bv_sale_items')
@@ -182,32 +237,44 @@ export default function Reportes() {
         saleItemsData = data || [];
       }
 
-      // 3. Fetch expenses
+      // Build a quick sale_id → sale_type map
+      const saleTypeMap: Record<string, string> = {};
+      const routeSaleIdMap: Record<string, string> = {};
+      activeSales.forEach(s => {
+        saleTypeMap[s.id] = s.sale_type || 'store';
+        if (s.sale_type === 'route' && s.route_id) routeSaleIdMap[s.id] = s.route_id;
+      });
+
+      // 3. Fetch expenses within date range
       const { data: expensesData } = await supabase
         .from('bv_expenses')
         .select('*')
+        .gte('created_at', fromTimestamp)
+        .lte('created_at', toTimestamp)
         .order('created_at', { ascending: false });
 
-      // 4. Fetch purchases
+      // 4. Fetch purchases within date range
       const { data: purchasesData } = await supabase
         .from('bv_purchases')
         .select('*')
+        .gte('created_at', fromTimestamp)
+        .lte('created_at', toTimestamp)
         .order('created_at', { ascending: false });
 
-      // 5. Fetch cash sessions
+      // 5. Fetch cash sessions (store only) within date range
       const { data: sessionsData } = await supabase
         .from('bv_cash_sessions')
         .select('*')
+        .gte('opened_at', fromTimestamp)
+        .lte('opened_at', toTimestamp)
         .order('created_at', { ascending: false });
 
-      // 6. Fetch collaborators lookup list
+      // 6. Fetch collaborators lookup
       const { data: collabData } = await supabase
         .from('bv_collaborators')
         .select('id, name');
       const collabMap: Record<string, string> = {};
-      (collabData || []).forEach(c => {
-        collabMap[c.id] = c.name;
-      });
+      (collabData || []).forEach(c => { collabMap[c.id] = c.name; });
       setCollaborators(collabMap);
 
       // 7. Fetch Routes
@@ -217,30 +284,58 @@ export default function Reportes() {
         .order('name', { ascending: true });
       setRoutes(routesData || []);
 
-      // 8. Fetch Route Commission Payments
+      // 8. Fetch Route Commission Payments (within range or simple list, we will filter by payment_date)
       const { data: paymentsData } = await supabase
         .from('bv_route_commission_payments')
         .select('*')
+        .gte('payment_date', dateFrom)
+        .lte('payment_date', dateTo)
         .order('payment_date', { ascending: false });
       setCommissionPayments(paymentsData || []);
 
-      // Calculate commissions per route in memory
-      const routeEarned: Record<string, number> = {};
-      const activeRouteSales = (salesData || []).filter(s => s.status !== 'anulada' && s.sale_type === 'route');
-      const routeSalesMap = activeRouteSales.reduce((acc, s) => {
-        if (s.route_id) acc[s.id] = s.route_id;
-        return acc;
-      }, {} as Record<string, string>);
+      // 9. Fetch Route Closings (new) within range
+      const { data: routeClosingsData } = await supabase
+        .from('bv_route_closings')
+        .select('*, bv_routes(name), bv_collaborators(name)')
+        .gte('closing_date', dateFrom)
+        .lte('closing_date', dateTo)
+        .order('closing_date', { ascending: false });
+      setRouteClosings((routeClosingsData as RouteClosingRow[]) || []);
+
+      // ── Per-channel calculations ──────────────────────────────────
+      const storeSalesTotal = activeSales
+        .filter(s => s.sale_type !== 'route')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+      const routeSalesTotal = activeSales
+        .filter(s => s.sale_type === 'route')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+      let storeCogs = 0;
+      let routeCogs = 0;
+      let totalCommissions = 0;
 
       saleItemsData.forEach(item => {
-        const routeId = routeSalesMap[item.sale_id];
+        const itemCogs = Number(item.quantity) * Number(item.unit_cost);
+        const sType = saleTypeMap[item.sale_id];
+        if (sType === 'route') {
+          routeCogs += itemCogs;
+          totalCommissions += Number(item.commission_amount || 0);
+        } else {
+          storeCogs += itemCogs;
+        }
+      });
+
+      // Commission balances per route
+      const routeEarned: Record<string, number> = {};
+      saleItemsData.forEach(item => {
+        const routeId = routeSaleIdMap[item.sale_id];
         if (routeId) {
           routeEarned[routeId] = (routeEarned[routeId] || 0) + Number(item.commission_amount || 0);
         }
       });
       setRouteEarnedMap(routeEarned);
 
-      // Calculate paid commissions per route in memory
       const routePaid: Record<string, number> = {};
       (paymentsData || []).forEach(p => {
         if (p.status === 'Pagado') {
@@ -249,24 +344,29 @@ export default function Reportes() {
       });
       setRoutePaidMap(routePaid);
 
-      // Calculations (only calculate sales totals for active, non-voided sales)
-      const totalSales = (salesData || [])
-        .filter(s => s.status !== 'anulada')
-        .reduce((sum, s) => sum + Number(s.total_amount), 0);
-
+      const totalSales = storeSalesTotal + routeSalesTotal;
+      const totalCogs = storeCogs + routeCogs;
       const totalExpenses = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
-      const totalCogs = saleItemsData.reduce((sum, i) => sum + (Number(i.quantity) * Number(i.unit_cost)), 0);
       const netProfit = totalSales - totalCogs - totalExpenses;
+      const storeProfit = storeSalesTotal - storeCogs - totalExpenses;
+      const routeNetProfit = routeSalesTotal - routeCogs - totalCommissions;
 
       setSummary({
         totalSales,
+        storeSales: storeSalesTotal,
+        routeSales: routeSalesTotal,
         totalExpenses,
         totalCogs,
-        netProfit
+        storeCogs,
+        routeCogs,
+        totalCommissions,
+        netProfit,
+        storeProfit,
+        routeNetProfit,
       });
 
       setExpenses(expensesData || []);
-      setRecentSales((salesData as any) || []);
+      setRecentSales((salesData as SaleRow[]) || []);
       setRecentPurchases(purchasesData || []);
       setCashSessions(sessionsData || []);
     } catch (err: any) {
@@ -276,10 +376,11 @@ export default function Reportes() {
     }
   }
 
+
   async function handleAddExpense(e: React.FormEvent) {
     e.preventDefault();
     if (!newExpense.description || !newExpense.amount) {
-      alert('Por favor complete los campos requeridos.');
+      toast.warning('Por favor complete los campos requeridos.');
       return;
     }
 
@@ -297,9 +398,9 @@ export default function Reportes() {
       setShowExpenseModal(false);
       setNewExpense({ description: '', amount: '', category: 'Alquiler' });
       fetchFinancialData();
-      alert('Gasto registrado con éxito.');
+      toast.success('Gasto registrado con éxito.');
     } catch (err: any) {
-      alert('Error registrando gasto: ' + err.message);
+      toast.error('Error registrando gasto: ' + err.message);
     }
   }
 
@@ -307,7 +408,7 @@ export default function Reportes() {
   async function handleRegisterCommissionPayment(e: React.FormEvent) {
     e.preventDefault();
     if (!newPayment.route_id || !newPayment.amount || !newPayment.payment_date) {
-      alert('Por favor complete todos los campos.');
+      toast.warning('Por favor complete todos los campos.');
       return;
     }
 
@@ -332,9 +433,9 @@ export default function Reportes() {
         status: 'Pagado'
       });
       fetchFinancialData();
-      alert('Pago de comisión registrado con éxito.');
+      toast.success('Pago de comisión registrado con éxito.');
     } catch (err: any) {
-      alert('Error registrando pago: ' + err.message);
+      toast.error('Error registrando pago: ' + err.message);
     } finally {
       setSavingPayment(false);
     }
@@ -422,13 +523,14 @@ export default function Reportes() {
 
       if (voidError) throw voidError;
 
-      alert('La factura ha sido anulada con éxito. El inventario y deudas han sido recalculados.');
+      toast.success('La factura ha sido anulada con éxito. El inventario y deudas han sido recalculados.');
       setShowAnularModal(false);
       setSelectedSale(null);
       setOwnerPassword('');
       fetchFinancialData();
     } catch (err: any) {
       setAnularError(err.message || 'Error al autorizar anulación.');
+      toast.error('Error: ' + (err.message || 'No autorizado.'));
     } finally {
       setAnulando(false);
     }
@@ -471,6 +573,16 @@ export default function Reportes() {
               Historial Caja
             </button>
             <button
+              onClick={() => setActiveTab('route_closings')}
+              className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+                activeTab === 'route_closings'
+                  ? 'bg-purple-500/20 text-purple-400 rounded-md'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Cierres de Ruta
+            </button>
+            <button
               onClick={() => setActiveTab('commissions')}
               className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
                 activeTab === 'commissions'
@@ -510,59 +622,117 @@ export default function Reportes() {
         </div>
       </div>
 
+      {/* Date Filters Bar */}
+      <div className="flex flex-wrap items-center gap-3 bg-[#0d0d18]/50 border border-white/5 p-3 rounded-xl">
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Período de Reportes:</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="bg-[#030308] border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-neon-blue"
+          />
+          <span className="text-gray-500 text-xs">al</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="bg-[#030308] border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-neon-blue"
+          />
+        </div>
+      </div>
+
       {loading ? (
         <div className="flex justify-center items-center py-20">
           <div className="w-10 h-10 border-4 border-neon-blue/20 border-t-neon-blue rounded-full animate-spin"></div>
         </div>
       ) : activeTab === 'financial' ? (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            
-            {/* Ventas */}
-            <div className="glass-panel p-5 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
+          {/* Global Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="glass-panel p-4 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
               <div className="space-y-1">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Ventas Activas</span>
+                <span className="text-gray-400 text-xs font-semibold uppercase block">Ventas Totales</span>
                 <span className="text-2xl font-black font-mono text-white">C$ {summary.totalSales.toFixed(2)}</span>
+                <div className="flex gap-2 text-[10px] font-mono">
+                  <span className="text-neon-blue">🏪 C$ {summary.storeSales.toFixed(2)}</span>
+                  <span className="text-purple-400">🚗 C$ {summary.routeSales.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="p-3 bg-neon-blue/10 rounded-lg text-neon-blue">
-                <TrendingUp size={20} />
-              </div>
+              <div className="p-3 bg-neon-blue/10 rounded-lg text-neon-blue"><TrendingUp size={20} /></div>
             </div>
 
-            {/* Costo Mercancía */}
-            <div className="glass-panel p-5 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
+            <div className="glass-panel p-4 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
               <div className="space-y-1">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Inversión Ventas (Costo)</span>
+                <span className="text-gray-400 text-xs font-semibold uppercase block">Costo Mercancía</span>
                 <span className="text-2xl font-black font-mono text-gray-400">C$ {summary.totalCogs.toFixed(2)}</span>
+                <div className="flex gap-2 text-[10px] font-mono">
+                  <span className="text-gray-500">🏪 C$ {summary.storeCogs.toFixed(2)}</span>
+                  <span className="text-gray-500">🚗 C$ {summary.routeCogs.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="p-3 bg-white/5 rounded-lg text-gray-400">
-                <ClipboardList size={20} />
-              </div>
+              <div className="p-3 bg-white/5 rounded-lg text-gray-400"><ClipboardList size={20} /></div>
             </div>
 
-            {/* Gastos */}
-            <div className="glass-panel p-5 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
+            <div className="glass-panel p-4 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
               <div className="space-y-1">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Gastos Operativos</span>
-                <span className="text-2xl font-black font-mono text-rose-500">C$ {summary.totalExpenses.toFixed(2)}</span>
+                <span className="text-gray-400 text-xs font-semibold uppercase block">Gastos + Comisiones</span>
+                <span className="text-2xl font-black font-mono text-rose-500">C$ {(summary.totalExpenses + summary.totalCommissions).toFixed(2)}</span>
+                <div className="flex gap-2 text-[10px] font-mono">
+                  <span className="text-rose-400">Gastos: C$ {summary.totalExpenses.toFixed(2)}</span>
+                  <span className="text-amber-400">Comis.: C$ {summary.totalCommissions.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="p-3 bg-rose-500/10 rounded-lg text-rose-500">
-                <TrendingDown size={20} />
-              </div>
+              <div className="p-3 bg-rose-500/10 rounded-lg text-rose-500"><TrendingDown size={20} /></div>
             </div>
 
-            {/* Ganancias */}
-            <div className="glass-panel p-5 rounded-xl border flex items-center justify-between shadow-card-glow border-neon-emerald/20 bg-neon-emerald/5">
+            <div className="glass-panel p-4 rounded-xl border border-neon-emerald/20 bg-neon-emerald/5 flex items-center justify-between shadow-card-glow">
               <div className="space-y-1">
                 <span className="text-neon-emerald text-xs font-semibold uppercase block">Utilidad Neta</span>
                 <span className="text-2xl font-black font-mono text-neon-emerald">C$ {summary.netProfit.toFixed(2)}</span>
+                <div className="flex gap-2 text-[10px] font-mono">
+                  <span className="text-neon-blue">🏪 C$ {summary.storeProfit.toFixed(2)}</span>
+                  <span className="text-purple-400">🚗 C$ {summary.routeNetProfit.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="p-3 bg-neon-emerald/10 rounded-lg text-neon-emerald">
-                <DollarSign size={20} />
+              <div className="p-3 bg-neon-emerald/10 rounded-lg text-neon-emerald"><DollarSign size={20} /></div>
+            </div>
+          </div>
+
+          {/* Per-channel breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Store channel */}
+            <div className="glass-panel p-4 rounded-xl border border-neon-blue/10">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
+                <Store size={14} className="text-neon-blue" />
+                Tienda Local
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between"><span className="text-gray-400">Ventas:</span><span className="font-mono text-white">C$ {summary.storeSales.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Costo merch.:</span><span className="font-mono text-gray-400">− C$ {summary.storeCogs.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Gastos oper.:</span><span className="font-mono text-rose-400">− C$ {summary.totalExpenses.toFixed(2)}</span></div>
+                <div className="flex justify-between border-t border-white/5 pt-2">
+                  <span className="text-neon-blue font-bold">Utilidad Tienda:</span>
+                  <span className={`font-mono font-bold ${summary.storeProfit >= 0 ? 'text-neon-emerald' : 'text-rose-500'}`}>C$ {summary.storeProfit.toFixed(2)}</span>
+                </div>
               </div>
             </div>
-
+            {/* Route channel */}
+            <div className="glass-panel p-4 rounded-xl border border-purple-500/10">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
+                <Navigation size={14} className="text-purple-400" />
+                Rutas de Venta
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between"><span className="text-gray-400">Ventas brutas:</span><span className="font-mono text-white">C$ {summary.routeSales.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Costo merch.:</span><span className="font-mono text-gray-400">− C$ {summary.routeCogs.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-amber-400">Comis. vendedores:</span><span className="font-mono text-amber-400">− C$ {summary.totalCommissions.toFixed(2)}</span></div>
+                <div className="flex justify-between border-t border-white/5 pt-2">
+                  <span className="text-purple-400 font-bold">Ganancia Neta Ruta:</span>
+                  <span className={`font-mono font-bold ${summary.routeNetProfit >= 0 ? 'text-neon-emerald' : 'text-rose-500'}`}>C$ {summary.routeNetProfit.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Detailed Lists */}
@@ -582,6 +752,8 @@ export default function Reportes() {
                         <th className="py-3 px-4">Factura / Fecha</th>
                         <th className="py-3 px-4">Cliente</th>
                         <th className="py-3 px-4">Método</th>
+                        <th className="py-3 px-4">Origen</th>
+                        <th className="py-3 px-4">Vendedor</th>
                         <th className="py-3 px-4">Estado</th>
                         <th className="py-3 px-4 text-right">Total</th>
                         <th className="py-3 px-4 text-center">Detalle</th>
@@ -610,6 +782,16 @@ export default function Reportes() {
                               }`}>
                                 {s.payment_method === 'cash' ? 'Efectivo' : s.payment_method === 'transfer' ? 'Transf.' : 'Crédito'}
                               </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              {s.sale_type === 'route' ? (
+                                <span className="text-purple-400 font-semibold text-xs">🚗 Ruta</span>
+                              ) : (
+                                <span className="text-emerald-400 font-semibold text-xs">🏪 Tienda</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-xs font-semibold text-gray-300">
+                              {s.user_id && collaborators[s.user_id] ? collaborators[s.user_id] : (s.user_id ? 'Usuario ' + s.user_id.substring(0,4) : 'Admin/Caja')}
                             </td>
                             <td className="py-3 px-4">
                               <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
@@ -789,6 +971,147 @@ export default function Reportes() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'route_closings' ? (
+        /* ── Route Closings Tab (Cierres de Ruta) ────────────────── */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Route Closings List */}
+          <div className="lg:col-span-2 space-y-4">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Navigation className="text-purple-400" size={18} />
+              Historial de Cierres de Ruta
+            </h2>
+            <div className="glass-panel rounded-xl overflow-hidden shadow-card-glow">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-white/5 text-gray-400 font-semibold text-xs uppercase tracking-wider">
+                      <th className="py-3.5 px-5">Fecha</th>
+                      <th className="py-3.5 px-5">Ruta / Vendedor</th>
+                      <th className="py-3.5 px-5 text-right">Ventas (C$)</th>
+                      <th className="py-3.5 px-5 text-right">Comisión (C$)</th>
+                      <th className="py-3.5 px-5 text-right">Neto Vet. (C$)</th>
+                      <th className="py-3.5 px-5">Estado</th>
+                      <th className="py-3.5 px-5 text-center">Detalle</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-xs font-sans text-gray-300">
+                    {routeClosings.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-gray-500">
+                          No hay cierres de ruta registrados. Inicia una jornada de ruta en el módulo de Caja.
+                        </td>
+                      </tr>
+                    ) : (
+                      routeClosings.map((rc) => (
+                        <tr
+                          key={rc.id}
+                          className={`hover:bg-white/2 transition cursor-pointer ${selectedRouteClosure?.id === rc.id ? 'bg-purple-500/5' : ''}`}
+                          onClick={() => setSelectedRouteClosure(selectedRouteClosure?.id === rc.id ? null : rc)}
+                        >
+                          <td className="py-3.5 px-5 font-mono text-gray-400">{new Date(rc.closing_date).toLocaleDateString()}</td>
+                          <td className="py-3.5 px-5">
+                            <span className="font-semibold text-white block">{rc.bv_routes?.name || 'Ruta'}</span>
+                            <span className="text-gray-500 text-[10px]">{rc.bv_collaborators?.name || 'Vendedor'}</span>
+                          </td>
+                          <td className="py-3.5 px-5 text-right font-mono text-white font-bold">
+                            C$ {rc.total_sales_nio.toFixed(2)}
+                          </td>
+                          <td className="py-3.5 px-5 text-right font-mono text-amber-400 font-bold">
+                            C$ {rc.total_commission_nio.toFixed(2)}
+                          </td>
+                          <td className="py-3.5 px-5 text-right font-mono font-bold text-neon-emerald">
+                            C$ {rc.net_store_profit_nio.toFixed(2)}
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                              rc.status === 'closed'
+                                ? 'bg-neon-emerald/20 text-neon-emerald'
+                                : 'bg-purple-500/20 text-purple-400'
+                            }`}>
+                              {rc.status === 'closed' ? 'Cerrado' : 'Abierto'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5 text-center">
+                            <button className="p-1.5 hover:bg-purple-500/10 rounded-lg text-purple-400 transition">
+                              <Eye size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Route Closing Detail Panel */}
+          <div className="space-y-4">
+            {selectedRouteClosure ? (
+              <div className="glass-panel rounded-xl overflow-hidden border border-purple-500/20">
+                <div className="p-4 border-b border-white/5 bg-purple-500/5">
+                  <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                    <Award size={14} className="text-amber-400" />
+                    Detalle del Cierre
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">{selectedRouteClosure.bv_routes?.name} — {new Date(selectedRouteClosure.closing_date).toLocaleDateString()}</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  {/* Payment method split */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-[#0d0d18] border border-white/5 p-2 rounded-lg text-center">
+                      <span className="text-gray-400 text-[9px] uppercase block">Efectivo</span>
+                      <span className="font-mono text-white text-xs font-bold">C$ {selectedRouteClosure.cash_collected_nio.toFixed(2)}</span>
+                    </div>
+                    <div className="bg-[#0d0d18] border border-white/5 p-2 rounded-lg text-center">
+                      <span className="text-gray-400 text-[9px] uppercase block">Crédito</span>
+                      <span className="font-mono text-amber-400 text-xs font-bold">C$ {selectedRouteClosure.credit_sales_nio.toFixed(2)}</span>
+                    </div>
+                    <div className="bg-[#0d0d18] border border-white/5 p-2 rounded-lg text-center">
+                      <span className="text-gray-400 text-[9px] uppercase block">Transfer.</span>
+                      <span className="font-mono text-neon-blue text-xs font-bold">C$ {selectedRouteClosure.transfer_sales_nio.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Category breakdown */}
+                  <div className="bg-[#0d0d18] rounded-lg overflow-hidden border border-white/5">
+                    <div className="px-3 py-2 bg-white/2 border-b border-white/5">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase">Comisiones por Categoría</span>
+                    </div>
+                    {(selectedRouteClosure.category_breakdown || []).length === 0 ? (
+                      <p className="text-xs text-gray-500 text-center py-3">Sin desglose disponible.</p>
+                    ) : (
+                      (selectedRouteClosure.category_breakdown || []).map((row) => (
+                        <div key={row.category} className="flex justify-between items-center px-3 py-2 border-b border-white/5 last:border-0 text-xs">
+                          <div>
+                            <span className="text-white font-semibold block">{row.category}</span>
+                            <span className="text-gray-500 font-mono">C$ {row.sales.toFixed(2)}</span>
+                          </div>
+                          <span className="text-amber-400 font-bold font-mono">C$ {row.commission_amount.toFixed(2)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between"><span className="text-gray-400">Total Ventas:</span><span className="font-mono text-white">C$ {selectedRouteClosure.total_sales_nio.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-amber-400">Total Comisión:</span><span className="font-mono text-amber-400">− C$ {selectedRouteClosure.total_commission_nio.toFixed(2)}</span></div>
+                    <div className="flex justify-between pt-1.5 border-t border-white/5">
+                      <span className="text-neon-emerald font-bold">Ganancia Neta:</span>
+                      <span className="font-mono font-bold text-neon-emerald">C$ {selectedRouteClosure.net_store_profit_nio.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="glass-panel rounded-xl p-6 border border-white/5 text-center">
+                <Navigation size={28} className="text-purple-400 mx-auto mb-2 opacity-50" />
+                <p className="text-gray-500 text-xs">Selecciona un cierre de la lista para ver el desglose de comisiones por categoría.</p>
+              </div>
+            )}
           </div>
         </div>
       ) : (

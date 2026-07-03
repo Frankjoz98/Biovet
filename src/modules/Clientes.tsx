@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import { Plus, Search, Edit, CreditCard, DollarSign, RefreshCw, X } from 'lucide-react';
 
 export interface Client {
@@ -90,7 +91,7 @@ export default function Clientes() {
   async function handleAddClient(e: React.FormEvent) {
     e.preventDefault();
     if (!newClient.name) {
-      alert('Por favor complete el nombre del cliente.');
+      toast.warning('Por favor complete el nombre del cliente.');
       return;
     }
 
@@ -108,6 +109,7 @@ export default function Clientes() {
           .eq('id', editingClient.id);
 
         if (error) throw error;
+        toast.success('Cliente actualizado correctamente.');
       } else {
         // Insert client
         const { error } = await supabase
@@ -121,6 +123,7 @@ export default function Clientes() {
           });
 
         if (error) throw error;
+        toast.success('Cliente creado correctamente.');
       }
 
       setShowAddModal(false);
@@ -133,7 +136,7 @@ export default function Clientes() {
         setSelectedClient(updatedClient);
       }
     } catch (err: any) {
-      alert('Error guardando cliente: ' + err.message);
+      toast.error('Error guardando cliente: ' + err.message);
     }
   }
 
@@ -143,12 +146,12 @@ export default function Clientes() {
 
     const abonoAmount = parseFloat(abonoForm.amount);
     if (abonoAmount <= 0) {
-      alert('El monto del abono debe ser mayor a 0.');
+      toast.warning('El monto del abono debe ser mayor a 0.');
       return;
     }
 
     if (abonoAmount > selectedCredit.remaining_amount) {
-      alert(`El monto no puede exceder la deuda del crédito (C$ ${selectedCredit.remaining_amount.toFixed(2)}).`);
+      toast.warning(`El monto no puede exceder la deuda del crédito (C$ ${selectedCredit.remaining_amount.toFixed(2)}).`);
       return;
     }
 
@@ -169,18 +172,24 @@ export default function Clientes() {
       setSelectedCredit(null);
       
       // Refresh data
-      alert('Abono registrado con éxito.');
+      toast.success('Abono registrado con éxito.');
       await fetchClients();
       if (selectedClient) {
         fetchClientCredits(selectedClient.id);
-        // Refresh selected client debt locally
-        const latestClient = clients.find(c => c.id === selectedClient.id);
-        if (latestClient) {
-          setSelectedClient({ ...selectedClient, current_debt: latestClient.current_debt - abonoAmount });
+        
+        // Correct way: Fetch updated client data directly from Supabase to avoid race conditions/desyncs
+        const { data: latestClientData } = await supabase
+          .from('bv_clients')
+          .select('current_debt')
+          .eq('id', selectedClient.id)
+          .single();
+
+        if (latestClientData) {
+          setSelectedClient({ ...selectedClient, current_debt: latestClientData.current_debt });
         }
       }
     } catch (err: any) {
-      alert('Error registrando abono: ' + err.message);
+      toast.error('Error registrando abono: ' + err.message);
     }
   }
 
@@ -201,13 +210,23 @@ export default function Clientes() {
 
       if (error) throw error;
 
-      alert('Crédito cancelado exitosamente.');
+      toast.success('Crédito cancelado exitosamente.');
       await fetchClients();
       if (selectedClient) {
         fetchClientCredits(selectedClient.id);
+        
+        const { data: latestClientData } = await supabase
+          .from('bv_clients')
+          .select('current_debt')
+          .eq('id', selectedClient.id)
+          .single();
+
+        if (latestClientData) {
+          setSelectedClient({ ...selectedClient, current_debt: latestClientData.current_debt });
+        }
       }
     } catch (err: any) {
-      alert('Error al cancelar crédito: ' + err.message);
+      toast.error('Error al cancelar crédito: ' + err.message);
     }
   }
 

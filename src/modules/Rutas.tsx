@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import { MapPin, Users, Plus, Shield, ShieldAlert, Award, RefreshCw, Navigation } from 'lucide-react';
 
 interface Collaborator {
@@ -177,9 +178,9 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       setShowCollabModal(false);
       setNewCollab({ name: '', phone: '', email: '', base_salary: '0', role_name: 'collaborator' });
       fetchInitialData();
-      alert('Colaborador registrado con éxito');
+      toast.success('Colaborador registrado con éxito');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
     }
   }
 
@@ -201,9 +202,9 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       setShowRouteModal(false);
       setNewRoute({ name: '', collaborator_id: '' });
       fetchInitialData();
-      alert('Ruta creada con éxito');
+      toast.success('Ruta creada con éxito');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
     }
   }
 
@@ -229,9 +230,9 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       setShowAddClientModal(false);
       setNewRouteClient({ client_id: '', gps_latitude: '', gps_longitude: '', business_notes: '' });
       fetchRouteClients(selectedRoute.id);
-      alert('Cliente agregado a la ruta');
+      toast.success('Cliente agregado a la ruta');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
     }
   }
 
@@ -239,7 +240,7 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
   function getGPSCoordinates() {
     setGettingGPS(true);
     if (!navigator.geolocation) {
-      alert('Geolocalización no soportada en este navegador');
+      toast.warning('Geolocalización no soportada en este navegador');
       setGettingGPS(false);
       return;
     }
@@ -252,9 +253,10 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
           gps_longitude: position.coords.longitude.toString()
         }));
         setGettingGPS(false);
+        toast.success('Coordenadas GPS obtenidas.');
       },
       (error) => {
-        alert('Error obteniendo GPS: ' + error.message);
+        toast.error('Error obteniendo GPS: ' + error.message);
         setGettingGPS(false);
       },
       { enableHighAccuracy: true }
@@ -272,8 +274,9 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
 
       if (error) throw error;
       setCommissions(commissions.map(c => c.id === id ? { ...c, percentage } : c));
+      toast.success('Comisión actualizada.');
     } catch (err: any) {
-      alert('Error actualizando comisión: ' + err.message);
+      toast.error('Error actualizando comisión: ' + err.message);
     }
   }
 
