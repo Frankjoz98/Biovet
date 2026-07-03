@@ -94,7 +94,6 @@ export default function Caja({ currentUserId }: CajaProps) {
   const [showRouteClosureModal, setShowRouteClosureModal] = useState(false);
   const [routeClosureSummary, setRouteClosureSummary] = useState<RouteClosingSummary | null>(null);
   const [closingRoute, setClosingRoute] = useState(false);
-  const [routeCloseNotes, setRouteCloseNotes] = useState('');
 
   // Top products
   const [topProducts, setTopProducts] = useState<{product_id: string; name: string; total_qty: number}[]>([]);
