@@ -32,6 +32,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         .from('bv_collaborators')
         .select('id, name')
         .eq('auth_user_id', data.user.id)
+        .eq('is_active', true)
         .single();
 
       if (profileError || !profile) {
@@ -66,6 +67,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         .from('bv_collaborators')
         .select('id', { count: 'exact', head: true })
         .eq('role_id', ownerRole.id)
+        .eq('is_active', true)
         .not('auth_user_id', 'is', null);
 
       const isFirstOwner = ownerCount === 0;
@@ -77,6 +79,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           .select('id, email, auth_user_id')
           .eq('email', email.toLowerCase().trim())
           .is('auth_user_id', null)
+          .eq('is_active', true)
           .single();
 
         if (profileCheckError || !existingProfile) {

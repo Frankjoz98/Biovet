@@ -4,12 +4,13 @@ import Inventario from './modules/Inventario';
 import Clientes from './modules/Clientes';
 import Reportes from './modules/Reportes';
 import Rutas from './modules/Rutas';
+import Ajustes from './modules/Ajustes';
 import Login from './modules/Login';
-import { ShoppingCart, Clipboard, Users, BarChart3, Heart, MapPin, LogOut, Crown, ShieldCheck, User2, Loader2, X } from 'lucide-react';
+import { ShoppingCart, Clipboard, Users, BarChart3, Heart, MapPin, LogOut, Crown, ShieldCheck, User2, Loader2, X, Settings } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 
-type Tab = 'caja' | 'inventario' | 'clientes' | 'rutas' | 'reportes';
+type Tab = 'caja' | 'inventario' | 'clientes' | 'rutas' | 'reportes' | 'ajustes';
 type UserRole = 'owner' | 'admin' | 'collaborator';
 
 interface UserProfile {
@@ -86,6 +87,7 @@ function App() {
         .from('bv_collaborators')
         .select('id, name, email, bv_roles(name)')
         .eq('auth_user_id', authUserId)
+        .eq('is_active', true)
         .single();
 
       if (error || !data) {
@@ -151,6 +153,7 @@ function App() {
     { id: 'clientes', label: 'Cartera Clientes', icon: Users, visible: true },
     { id: 'rutas', label: 'Rutas & Vendedores', icon: MapPin, visible: true },
     { id: 'reportes', label: 'Reportes', icon: BarChart3, visible: isPrivileged },
+    { id: 'ajustes', label: 'Ajustes', icon: Settings, visible: isPrivileged },
   ].filter(item => item.visible);
 
   const badge = ROLE_BADGE[role];
@@ -241,6 +244,7 @@ function App() {
             />
           )}
           {activeTab === 'reportes' && isPrivileged && <Reportes />}
+          {activeTab === 'ajustes' && isPrivileged && <Ajustes />}
         </div>
       </main>
 

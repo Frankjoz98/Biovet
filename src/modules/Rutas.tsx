@@ -94,6 +94,7 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       const { data: collabData } = await supabase
         .from('bv_collaborators')
         .select('*, bv_roles(name)')
+        .eq('is_active', true)
         .order('name', { ascending: true });
       setCollaborators(collabData || []);
 
