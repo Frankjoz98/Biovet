@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins, Navigation, CheckCircle } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins, Navigation, CheckCircle, TrendingUp, Award } from 'lucide-react';
 import type { Product } from './Inventario';
 import type { Client } from './Clientes';
 
