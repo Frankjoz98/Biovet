@@ -337,8 +337,8 @@ export default function Caja({ currentUserId }: CajaProps) {
         .limit(200);
       if (!data) return;
       const totals: Record<string, { name: string; total_qty: number }> = {};
-      data.forEach((item: Record<string, unknown>) => {
-        const pid = item.product_id;
+      data.forEach((item: any) => {
+        const pid = String(item.product_id);
         const name = item.bv_products?.name || 'Desconocido';
         if (!totals[pid]) totals[pid] = { name, total_qty: 0 };
         totals[pid].total_qty += item.quantity;

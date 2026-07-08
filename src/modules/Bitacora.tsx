@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { BookOpen, RefreshCw, Search, TrendingUp, TrendingDown, ShoppingCart, Settings, User, Loader2 } from 'lucide-react';
@@ -14,7 +14,7 @@ interface AuditLog {
   bv_collaborators?: { name: string } | null;
 }
 
-const ACTION_ICONS: Record<string, JSX.Element> = {
+const ACTION_ICONS: Record<string, React.ReactNode> = {
   'venta_anulada':    <ShoppingCart size={14} className="text-rose-400" />,
   'venta_registrada': <ShoppingCart size={14} className="text-neon-emerald" />,
   'costo_actualizado': <TrendingUp size={14} className="text-amber-400" />,
