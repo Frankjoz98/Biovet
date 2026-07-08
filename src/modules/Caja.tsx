@@ -856,29 +856,10 @@ export default function Caja({ currentUserId }: CajaProps) {
           )}
         </div>
 
-        {/* Top Products — Ultra Compact Horizontal Strip */}
-        {topProducts.length > 0 && (
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5 flex-nowrap">
-            <span className="font-bold uppercase text-[9px] text-gray-600 shrink-0 tracking-widest">TOP:</span>
-            {topProducts.map((tp, i) => (
-              <button
-                key={tp.product_id}
-                onClick={() => {
-                  const prod = products.find(p => p.id === tp.product_id);
-                  if (prod) addToCart(prod);
-                }}
-                className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-neon-blue/5 hover:bg-neon-blue/15 border border-neon-blue/10 hover:border-neon-blue/40 rounded text-[9px] text-gray-400 hover:text-white transition-all"
-              >
-                <span className="font-black text-neon-blue">#{i+1}</span>
-                <span className="max-w-[60px] truncate font-medium">{tp.name}</span>
-                <span className="text-gray-600 font-mono">·{tp.total_qty}</span>
-              </button>
-            ))}
-          </div>
-        )}
 
-        {/* Product Grid — full width 4 cols */}
-        <div className="overflow-y-auto pr-1" style={{maxHeight: 'calc(100vh - 260px)'}}>
+
+        {/* Product Grid — full width */}
+        <div className="overflow-y-auto pr-1" style={{maxHeight: 'calc(100vh - 200px)'}}>
           {loading ? (
             <div className="flex justify-center items-center h-full">
               <div className="w-10 h-10 border-4 border-neon-blue/20 border-t-neon-blue rounded-full animate-spin"></div>
