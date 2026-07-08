@@ -98,6 +98,7 @@ export default function Caja({ currentUserId }: CajaProps) {
 
   // Descuento global (sobre el total)
   const [globalDiscountPct, setGlobalDiscountPct] = useState<string>('0');
+  const [globalDiscountFixed, setGlobalDiscountFixed] = useState<string>('0'); // descuento monetario fijo
 
   // Modal de autorización de owner para crédito excedido
   const [showCreditAuthModal, setShowCreditAuthModal] = useState(false);
@@ -502,9 +503,30 @@ export default function Caja({ currentUserId }: CajaProps) {
     const itemDiscount = itemTotal * (item.discountPct / 100);
     return sum + (itemTotal - itemDiscount);
   }, 0);
-  const globalDiscountAmt = cartSubtotal * ((parseFloat(globalDiscountPct) || 0) / 100);
+
+  // El descuento global puede ser por % o monto fijo (se usa el mayor)
+  const globalPctAmt = cartSubtotal * ((parseFloat(globalDiscountPct) || 0) / 100);
+  const globalFixedAmt = Math.min(parseFloat(globalDiscountFixed) || 0, cartSubtotal);
+  const globalDiscountAmt = Math.max(globalPctAmt, globalFixedAmt);
+
   const cartTotal = Math.max(0, cartSubtotal - globalDiscountAmt);
   const totalDiscountAmt = cart.reduce((sum, item) => sum + (item.product.price * item.quantity * (item.discountPct / 100)), 0) + globalDiscountAmt;
+
+  // Handler: al cambiar %, calcular monto equivalente
+  function handleGlobalPctChange(val: string) {
+    setGlobalDiscountPct(val);
+    const pct = parseFloat(val) || 0;
+    setGlobalDiscountFixed((cartSubtotal * pct / 100).toFixed(2));
+  }
+
+  // Handler: al cambiar monto fijo, calcular % equivalente
+  function handleGlobalFixedChange(val: string) {
+    setGlobalDiscountFixed(val);
+    const fixed = parseFloat(val) || 0;
+    if (cartSubtotal > 0) {
+      setGlobalDiscountPct(((fixed / cartSubtotal) * 100).toFixed(2));
+    }
+  }
 
   const handleCompleteSale = async () => {
     if (cart.length === 0) {
@@ -665,6 +687,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       setCashReceivedNio('');
       setSelectedClient(null);
       setPaymentMethod('cash');
+      setGlobalDiscountPct('0');
+      setGlobalDiscountFixed('0');
       
       // Refresh inventory
       fetchInitialData();
@@ -827,10 +851,10 @@ export default function Caja({ currentUserId }: CajaProps) {
           )}
         </div>
 
-        {/* Top Products Strip (Compact) */}
+        {/* Top Products — Ultra Compact Horizontal Strip */}
         {topProducts.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[9px]">
-            <span className="font-bold uppercase text-gray-500 shrink-0">Top:</span>
+          <div className="flex items-center gap-1 overflow-x-auto py-0.5 flex-nowrap">
+            <span className="font-bold uppercase text-[9px] text-gray-600 shrink-0 tracking-widest">TOP:</span>
             {topProducts.map((tp, i) => (
               <button
                 key={tp.product_id}
@@ -838,11 +862,11 @@ export default function Caja({ currentUserId }: CajaProps) {
                   const prod = products.find(p => p.id === tp.product_id);
                   if (prod) addToCart(prod);
                 }}
-                className="shrink-0 flex items-center gap-1 px-2 py-0.5 bg-white/5 hover:bg-neon-blue/10 border border-white/10 hover:border-neon-blue/30 rounded-md text-gray-300 hover:text-white transition"
+                className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-neon-blue/5 hover:bg-neon-blue/15 border border-neon-blue/10 hover:border-neon-blue/40 rounded text-[9px] text-gray-400 hover:text-white transition-all"
               >
-                <span className="font-bold text-neon-blue">#{i+1}</span>
-                <span className="max-w-[80px] truncate">{tp.name}</span>
-                <span className="text-gray-500 font-mono">({tp.total_qty})</span>
+                <span className="font-black text-neon-blue">#{i+1}</span>
+                <span className="max-w-[60px] truncate font-medium">{tp.name}</span>
+                <span className="text-gray-600 font-mono">·{tp.total_qty}</span>
               </button>
             ))}
           </div>
@@ -1027,18 +1051,33 @@ export default function Caja({ currentUserId }: CajaProps) {
         {/* Checkout Controls */}
         <div className="p-5 border-t border-white/5 bg-[#07070f] space-y-3">
 
-          {/* Descuento global */}
-          <div className="flex items-center gap-2 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
-            <span className="text-xs text-gray-400 font-bold uppercase flex-1">Dto. Global %:</span>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={globalDiscountPct}
-              onChange={(e) => setGlobalDiscountPct(e.target.value)}
-              className="w-16 bg-transparent text-right font-mono text-sm text-amber-400 focus:outline-none font-bold"
-              placeholder="0"
-            />
+          {/* Descuento Global — doble entrada: % y monto fijo */}
+          <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2 space-y-1.5">
+            <span className="text-[10px] text-amber-400/70 font-bold uppercase tracking-wider">Descuento Global</span>
+            <div className="flex gap-2">
+              {/* Porcentaje */}
+              <div className="flex-1 flex items-center gap-1.5 bg-black/20 border border-white/5 rounded-md px-2 py-1">
+                <span className="text-[10px] text-gray-500 font-bold shrink-0">%</span>
+                <input
+                  type="number" min="0" max="100"
+                  value={globalDiscountPct}
+                  onChange={(e) => handleGlobalPctChange(e.target.value)}
+                  className="flex-1 w-0 bg-transparent text-right font-mono text-sm text-amber-400 focus:outline-none font-bold"
+                  placeholder="0"
+                />
+              </div>
+              {/* Monto fijo */}
+              <div className="flex-1 flex items-center gap-1.5 bg-black/20 border border-white/5 rounded-md px-2 py-1">
+                <span className="text-[10px] text-gray-500 font-bold shrink-0">C$</span>
+                <input
+                  type="number" min="0"
+                  value={globalDiscountFixed}
+                  onChange={(e) => handleGlobalFixedChange(e.target.value)}
+                  className="flex-1 w-0 bg-transparent text-right font-mono text-sm text-amber-400 focus:outline-none font-bold"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Subtotal + Descuento + Total */}
