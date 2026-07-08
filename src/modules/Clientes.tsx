@@ -53,6 +53,13 @@ export default function Clientes() {
   // Credit payments history
   const [creditPaymentsMap, setCreditPaymentsMap] = useState<Record<string, {id: string; amount: number; payment_method: string; notes: string | null; created_at: string}[]>>({});
 
+  // Expanded state for payment history per credit
+  const [expandedCredits, setExpandedCredits] = useState<Record<string, boolean>>({})
+
+  function toggleCreditExpanded(creditId: string) {
+    setExpandedCredits(prev => ({ ...prev, [creditId]: !prev[creditId] }));
+  };
+
   useEffect(() => {
     fetchClients();
   }, []);
@@ -447,7 +454,7 @@ export default function Clientes() {
                     const paidAmt = credit.total_amount - credit.remaining_amount;
                     const progressPct = credit.total_amount > 0 ? (paidAmt / credit.total_amount) * 100 : 0;
                     const payments = creditPaymentsMap[credit.id] || [];
-                    const [expanded, setExpanded] = useState(false);
+                    const expanded = !!expandedCredits[credit.id];
                     return (
                       <div key={credit.id} className="bg-[#0d0d18] border border-white/5 p-3 rounded-lg flex flex-col gap-2">
                         <div className="flex justify-between items-start">
@@ -478,7 +485,7 @@ export default function Clientes() {
 
                         {/* Payment history toggle */}
                         {payments.length > 0 && (
-                          <button onClick={() => setExpanded(!expanded)}
+                          <button onClick={() => toggleCreditExpanded(credit.id)}
                             className="text-[10px] text-gray-500 hover:text-neon-blue text-left underline transition">
                             {expanded ? 'Ocultar' : `Ver ${payments.length} pago(s) anterior(es)`}
                           </button>
