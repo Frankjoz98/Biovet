@@ -98,8 +98,9 @@ export default function Clientes() {
         // Group by credit_id
         const grouped: Record<string, any[]> = {};
         (paymentsData || []).forEach((p: Record<string, unknown>) => {
-          if (!grouped[p.credit_id]) grouped[p.credit_id] = [];
-          grouped[p.credit_id].push(p);
+          const cid = String(p.credit_id);
+          if (!grouped[cid]) grouped[cid] = [];
+          grouped[cid].push(p);
         });
         setCreditPaymentsMap(grouped);
       }

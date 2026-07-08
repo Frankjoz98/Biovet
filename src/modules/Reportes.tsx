@@ -5,7 +5,6 @@ import {
   DollarSign,
   TrendingUp,
   TrendingDown,
-  ClipboardList,
   Plus,
   RefreshCw,
   ShoppingBag,
@@ -304,13 +303,6 @@ export default function Reportes() {
       setRouteClosings((routeClosingsData as RouteClosingRow[]) || []);
 
       // ── Per-channel calculations ──────────────────────────────────
-      const storeSalesTotal = activeSales
-        .filter(s => s.sale_type !== 'route')
-        .reduce((sum, s) => sum + Number(s.total_amount), 0);
-
-      const routeSalesTotal = activeSales
-        .filter(s => s.sale_type === 'route')
-        .reduce((sum, s) => sum + Number(s.total_amount), 0);
 
       let storeCogs = 0;
       let routeCogs = 0;

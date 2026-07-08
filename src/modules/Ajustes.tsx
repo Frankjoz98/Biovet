@@ -53,7 +53,7 @@ export default function Ajustes() {
         settingsData.forEach(s => {
           mappedSettings[s.key] = s.value;
         });
-        setSettings(mappedSettings as BusinessSettings);
+        setSettings(mappedSettings as unknown as BusinessSettings);
       }
 
       // Fetch collaborators (including inactive so we can manage them)
