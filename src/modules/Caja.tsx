@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins, Navigation, TrendingUp, Award, CheckCircle } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, DollarSign, ArrowRight, RefreshCw, Printer, X, ShieldAlert, Coins, Navigation, CheckCircle } from 'lucide-react';
 import type { Product } from './Inventario';
 import type { Client } from './Clientes';
 
@@ -110,8 +110,6 @@ export default function Caja({ currentUserId }: CajaProps) {
   const [creditAuthLoading, setCreditAuthLoading] = useState(false);
   const [pendingSaleCallback, setPendingSaleCallback] = useState<(() => void) | null>(null);
 
-  // Top products
-  const [topProducts, setTopProducts] = useState<{product_id: string; name: string; total_qty: number}[]>([]);
 
   // Business settings state
   const [businessSettings, setBusinessSettings] = useState({
@@ -144,7 +142,6 @@ export default function Caja({ currentUserId }: CajaProps) {
     fetchInitialData();
     fetchCommissionsConfig();
     fetchRoutes();
-    fetchTopProducts();
   }, []);
 
   // When route changes, check for active route closure
@@ -333,29 +330,6 @@ export default function Caja({ currentUserId }: CajaProps) {
     }
   }
 
-  async function fetchTopProducts() {
-    try {
-      const { data } = await supabase
-        .from('bv_sale_items')
-        .select('product_id, quantity, bv_products(name)')
-        .limit(200);
-      if (!data) return;
-      const totals: Record<string, { name: string; total_qty: number }> = {};
-      data.forEach((item: any) => {
-        const pid = String(item.product_id);
-        const name = item.bv_products?.name || 'Desconocido';
-        if (!totals[pid]) totals[pid] = { name, total_qty: 0 };
-        totals[pid].total_qty += item.quantity;
-      });
-      const sorted = Object.entries(totals)
-        .map(([product_id, v]) => ({ product_id, ...v }))
-        .sort((a, b) => b.total_qty - a.total_qty)
-        .slice(0, 5);
-      setTopProducts(sorted);
-    } catch (e) {
-      console.error('Error fetching top products:', e);
-    }
-  }
 
   async function handleSaveExpense(e: React.FormEvent) {
     e.preventDefault();
