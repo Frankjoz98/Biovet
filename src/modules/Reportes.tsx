@@ -23,7 +23,8 @@ import {
   Clock,
   Navigation,
   Award,
-  Store
+  Store,
+  CreditCard
 } from 'lucide-react';
 
 interface Expense {
@@ -344,17 +345,32 @@ export default function Reportes() {
       });
       setRoutePaidMap(routePaid);
 
-      const totalSales = storeSalesTotal + routeSalesTotal;
+      // ── Ventas netas: solo cobradas (efectivo + transferencia) ──
+      // Los créditos no se suman hasta que el cliente realice un pago/abono
+      const storeSalesCollected = activeSales
+        .filter(s => s.sale_type !== 'route' && s.payment_method !== 'credit')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+      const routeSalesCollected = activeSales
+        .filter(s => s.sale_type === 'route' && s.payment_method !== 'credit')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+      // Créditos pendientes (informativos, NO se suman a ganancias)
+      const totalCreditPending = activeSales
+        .filter(s => s.payment_method === 'credit')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+      const totalSales = storeSalesCollected + routeSalesCollected;
       const totalCogs = storeCogs + routeCogs;
       const totalExpenses = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
       const netProfit = totalSales - totalCogs - totalExpenses;
-      const storeProfit = storeSalesTotal - storeCogs - totalExpenses;
-      const routeNetProfit = routeSalesTotal - routeCogs - totalCommissions;
+      const storeProfit = storeSalesCollected - storeCogs - totalExpenses;
+      const routeNetProfit = routeSalesCollected - routeCogs - totalCommissions;
 
       setSummary({
         totalSales,
-        storeSales: storeSalesTotal,
-        routeSales: routeSalesTotal,
+        storeSales: storeSalesCollected,
+        routeSales: routeSalesCollected,
         totalExpenses,
         totalCogs,
         storeCogs,
@@ -363,13 +379,15 @@ export default function Reportes() {
         netProfit,
         storeProfit,
         routeNetProfit,
-      });
+        creditPending: totalCreditPending,
+      } as any);
 
       setExpenses(expensesData || []);
       setRecentSales((salesData as SaleRow[]) || []);
       setRecentPurchases(purchasesData || []);
       setCashSessions(sessionsData || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching financial reports:', err.message);
     } finally {
       setLoading(false);
@@ -399,7 +417,8 @@ export default function Reportes() {
       setNewExpense({ description: '', amount: '', category: 'Alquiler' });
       fetchFinancialData();
       toast.success('Gasto registrado con éxito.');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error registrando gasto: ' + err.message);
     }
   }
@@ -434,7 +453,8 @@ export default function Reportes() {
       });
       fetchFinancialData();
       toast.success('Pago de comisión registrado con éxito.');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error registrando pago: ' + err.message);
     } finally {
       setSavingPayment(false);
@@ -453,7 +473,8 @@ export default function Reportes() {
         .eq('sale_id', sale.id);
       if (error) throw error;
       setSaleItems(data || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching sale details:', err.message);
     } finally {
       setLoadingSaleItems(false);
@@ -472,7 +493,8 @@ export default function Reportes() {
         .eq('purchase_id', purchase.id);
       if (error) throw error;
       setPurchaseItems(data || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching purchase details:', err.message);
     } finally {
       setLoadingPurchaseItems(false);
@@ -492,7 +514,7 @@ export default function Reportes() {
 
       if (ownerFetchError) throw ownerFetchError;
 
-      const ownerEmail = (ownerList || []).find((c: any) => c.bv_roles?.name === 'owner')?.email;
+      const ownerEmail = (ownerList || []).find((c: Record<string, unknown>) => (c.bv_roles as Record<string, string>)?.name === 'owner')?.email;
       if (!ownerEmail) {
         throw new Error('No se encontró una cuenta de Propietario configurada en el sistema.');
       }
@@ -528,7 +550,8 @@ export default function Reportes() {
       setSelectedSale(null);
       setOwnerPassword('');
       fetchFinancialData();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       setAnularError(err.message || 'Error al autorizar anulación.');
       toast.error('Error: ' + (err.message || 'No autorizado.'));
     } finally {
@@ -652,7 +675,7 @@ export default function Reportes() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="glass-panel p-4 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
               <div className="space-y-1">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Ventas Totales</span>
+                <span className="text-gray-400 text-xs font-semibold uppercase block">Ventas Cobradas</span>
                 <span className="text-2xl font-black font-mono text-white">C$ {summary.totalSales.toFixed(2)}</span>
                 <div className="flex gap-2 text-[10px] font-mono">
                   <span className="text-neon-blue">🏪 C$ {summary.storeSales.toFixed(2)}</span>
@@ -662,16 +685,13 @@ export default function Reportes() {
               <div className="p-3 bg-neon-blue/10 rounded-lg text-neon-blue"><TrendingUp size={20} /></div>
             </div>
 
-            <div className="glass-panel p-4 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
+            <div className="glass-panel p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 flex items-center justify-between shadow-card-glow">
               <div className="space-y-1">
-                <span className="text-gray-400 text-xs font-semibold uppercase block">Costo Mercancía</span>
-                <span className="text-2xl font-black font-mono text-gray-400">C$ {summary.totalCogs.toFixed(2)}</span>
-                <div className="flex gap-2 text-[10px] font-mono">
-                  <span className="text-gray-500">🏪 C$ {summary.storeCogs.toFixed(2)}</span>
-                  <span className="text-gray-500">🚗 C$ {summary.routeCogs.toFixed(2)}</span>
-                </div>
+                <span className="text-amber-400 text-xs font-semibold uppercase block">Créditos Pendientes</span>
+                <span className="text-2xl font-black font-mono text-amber-400">C$ {((summary as any).creditPending || 0).toFixed(2)}</span>
+                <div className="text-[10px] font-mono text-amber-500/70">No incluidos en utilidad</div>
               </div>
-              <div className="p-3 bg-white/5 rounded-lg text-gray-400"><ClipboardList size={20} /></div>
+              <div className="p-3 bg-amber-500/10 rounded-lg text-amber-400"><CreditCard size={20} /></div>
             </div>
 
             <div className="glass-panel p-4 rounded-xl border border-white/5 flex items-center justify-between shadow-card-glow">
@@ -912,6 +932,12 @@ export default function Reportes() {
                   ) : (
                     cashSessions.map((cs) => {
                       const isClosed = cs.status === 'closed';
+                      const expected = cs.initial_cash_nio + cs.expected_sales_nio;
+                      const real = cs.real_cash_nio || 0;
+                      const diff = real - expected;
+                      const conciliation = !isClosed ? null :
+                        Math.abs(diff) < 0.01 ? 'conciliado' :
+                        diff < 0 ? 'faltante' : 'sobrante';
                       return (
                         <tr key={cs.id} className="hover:bg-white/2 transition">
                           <td className="py-3.5 px-5">
@@ -936,7 +962,7 @@ export default function Reportes() {
                           </td>
                           <td className="py-3.5 px-5 text-right font-mono text-white">
                             {isClosed ? (
-                              <span>C$ {(cs.real_cash_nio || 0).toFixed(2)}</span>
+                              <span>C$ {real.toFixed(2)}</span>
                             ) : (
                               <span className="text-gray-500">—</span>
                             )}
@@ -954,10 +980,25 @@ export default function Reportes() {
                               )}
                             </div>
                           </td>
-                          <td className="py-3.5 px-5 max-w-[200px] truncate text-gray-400">
+                          <td className="py-3.5 px-5">
                             {isClosed ? (
-                              <div>
-                                <span className="font-semibold block text-amber-500">Cerrado</span>
+                              <div className="space-y-1">
+                                {/* Badge de Conciliación */}
+                                {conciliation === 'conciliado' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-neon-emerald/20 text-neon-emerald">
+                                    <CheckCircle size={10} /> Conciliado
+                                  </span>
+                                )}
+                                {conciliation === 'faltante' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400">
+                                    <TrendingDown size={10} /> Faltante C$ {Math.abs(diff).toFixed(2)}
+                                  </span>
+                                )}
+                                {conciliation === 'sobrante' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">
+                                    <TrendingUp size={10} /> Sobrante C$ {diff.toFixed(2)}
+                                  </span>
+                                )}
                                 <span className="text-gray-500 text-[10px] block truncate">{cs.difference_notes || 'Sin observaciones'}</span>
                               </div>
                             ) : (

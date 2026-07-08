@@ -41,7 +41,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       }
 
       onLoginSuccess();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       setError(err.message || 'Error al iniciar sesión.');
     } finally {
       setLoading(false);
@@ -141,7 +142,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       }
 
       onLoginSuccess();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       setError(err.message || 'Error al registrarse.');
     } finally {
       setLoading(false);

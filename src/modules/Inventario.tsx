@@ -80,7 +80,8 @@ export default function Inventario({ userRole }: InventarioProps) {
         .order('name', { ascending: true });
       if (error) throw error;
       setProducts(data || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching products:', err.message);
     } finally {
       setLoading(false);
@@ -109,6 +110,27 @@ export default function Inventario({ userRole }: InventarioProps) {
       if (editingProduct) {
         const { error } = await supabase.from('bv_products').update(payload).eq('id', editingProduct.id);
         if (error) throw error;
+        
+        // Registrar en bitácora si cambió el costo
+        if (editingProduct.cost !== payload.cost) {
+          await supabase.from('bv_audit_log').insert({
+            action: 'costo_actualizado',
+            entity: 'bv_products',
+            entity_id: editingProduct.id,
+            old_value: { costo_anterior: editingProduct.cost },
+            new_value: { costo_nuevo: payload.cost }
+          });
+        }
+        
+        // Registrar edición general
+        await supabase.from('bv_audit_log').insert({
+          action: 'producto_editado',
+          entity: 'bv_products',
+          entity_id: editingProduct.id,
+          old_value: { nombre: editingProduct.name, precio: editingProduct.price, stock: editingProduct.stock },
+          new_value: { nombre: payload.name, precio: payload.price, stock: payload.stock }
+        });
+
         toast.success('Producto actualizado con éxito.');
       } else {
         const { error } = await supabase.from('bv_products').insert(payload);
@@ -120,7 +142,8 @@ export default function Inventario({ userRole }: InventarioProps) {
       setEditingProduct(null);
       setNewProduct({ code: '', name: '', cost: '', price: '', stock: '0', min_stock: '5', category: 'Otros' });
       fetchProducts();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error guardando producto: ' + err.message);
     }
   }
@@ -209,7 +232,8 @@ export default function Inventario({ userRole }: InventarioProps) {
       setPurchaseItems([{ ...EMPTY_PURCHASE_ITEM }]);
       fetchProducts();
       toast.success(`Compra registrada. ${purchaseItems.length} producto(s) actualizados.`);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error registrando compra: ' + err.message);
     } finally {
       setSavingPurchase(false);

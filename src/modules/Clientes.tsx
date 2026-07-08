@@ -46,8 +46,12 @@ export default function Clientes() {
   // New Abono Form
   const [abonoForm, setAbonoForm] = useState({
     amount: '',
-    payment_method: 'cash'
+    payment_method: 'cash',
+    notes: ''
   });
+
+  // Credit payments history
+  const [creditPaymentsMap, setCreditPaymentsMap] = useState<Record<string, {id: string; amount: number; payment_method: string; notes: string | null; created_at: string}[]>>({});
 
   useEffect(() => {
     fetchClients();
@@ -63,7 +67,8 @@ export default function Clientes() {
 
       if (error) throw error;
       setClients(data || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching clients:', err.message);
     } finally {
       setLoading(false);
@@ -81,7 +86,25 @@ export default function Clientes() {
 
       if (error) throw error;
       setClientCredits(data || []);
-    } catch (err: any) {
+
+      // Fetch all payments for these credits
+      if (data && data.length > 0) {
+        const creditIds = data.map((c: Record<string, unknown>) => c.id);
+        const { data: paymentsData } = await supabase
+          .from('bv_credit_payments')
+          .select('*')
+          .in('credit_id', creditIds)
+          .order('created_at', { ascending: false });
+        // Group by credit_id
+        const grouped: Record<string, any[]> = {};
+        (paymentsData || []).forEach((p: Record<string, unknown>) => {
+          if (!grouped[p.credit_id]) grouped[p.credit_id] = [];
+          grouped[p.credit_id].push(p);
+        });
+        setCreditPaymentsMap(grouped);
+      }
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching client credits:', err.message);
     } finally {
       setLoadingCredits(false);
@@ -135,7 +158,8 @@ export default function Clientes() {
         const updatedClient = { ...selectedClient, name: newClient.name, phone: newClient.phone, email: newClient.email, credit_limit: parseFloat(newClient.credit_limit) };
         setSelectedClient(updatedClient);
       }
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error guardando cliente: ' + err.message);
     }
   }
@@ -162,13 +186,23 @@ export default function Clientes() {
         .insert({
           credit_id: selectedCredit.id,
           amount: abonoAmount,
-          payment_method: abonoForm.payment_method
+          payment_method: abonoForm.payment_method,
+          notes: abonoForm.notes || null
         });
 
       if (error) throw error;
 
+      // Register in audit log
+      await supabase.from('bv_audit_log').insert({
+        action: 'abono_registrado',
+        entity: 'bv_credits',
+        entity_id: selectedCredit.id,
+        old_value: { saldo_anterior: selectedCredit.remaining_amount },
+        new_value: { abono: abonoAmount, metodo: abonoForm.payment_method, saldo_nuevo: Math.max(0, selectedCredit.remaining_amount - abonoAmount) }
+      });
+
       setShowAbonoModal(false);
-      setAbonoForm({ amount: '', payment_method: 'cash' });
+      setAbonoForm({ amount: '', payment_method: 'cash', notes: '' });
       setSelectedCredit(null);
       
       // Refresh data
@@ -188,7 +222,8 @@ export default function Clientes() {
           setSelectedClient({ ...selectedClient, current_debt: latestClientData.current_debt });
         }
       }
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error registrando abono: ' + err.message);
     }
   }
@@ -225,7 +260,8 @@ export default function Clientes() {
           setSelectedClient({ ...selectedClient, current_debt: latestClientData.current_debt });
         }
       }
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error al cancelar crédito: ' + err.message);
     }
   }
@@ -407,6 +443,10 @@ export default function Clientes() {
                 <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
                   {clientCredits.map((credit) => {
                     const isPaid = credit.status === 'paid';
+                    const paidAmt = credit.total_amount - credit.remaining_amount;
+                    const progressPct = credit.total_amount > 0 ? (paidAmt / credit.total_amount) * 100 : 0;
+                    const payments = creditPaymentsMap[credit.id] || [];
+                    const [expanded, setExpanded] = useState(false);
                     return (
                       <div key={credit.id} className="bg-[#0d0d18] border border-white/5 p-3 rounded-lg flex flex-col gap-2">
                         <div className="flex justify-between items-start">
@@ -415,17 +455,50 @@ export default function Clientes() {
                               {new Date(credit.created_at).toLocaleDateString()}
                             </span>
                             <span className="text-xs text-gray-400 font-semibold block mt-0.5">
-                              Total Crédito: C$ {credit.total_amount.toFixed(2)}
+                              Total: C$ {credit.total_amount.toFixed(2)}
                             </span>
                           </div>
                           <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${isPaid ? 'bg-neon-emerald/20 text-neon-emerald border border-neon-emerald/30' : 'bg-amber-500/20 text-amber-500 border border-amber-500/30'}`}>
-                            {isPaid ? 'Pagado' : 'Pendiente'}
+                            {isPaid ? 'Liquidado' : 'Pendiente'}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center bg-white/2 p-2 rounded text-xs">
-                          <span className="text-gray-400">Saldo Restante:</span>
-                          <span className="font-bold text-white font-mono">C$ {credit.remaining_amount.toFixed(2)}</span>
+
+                        {/* Progress bar */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] font-mono">
+                            <span className="text-neon-emerald">Abonado: C$ {paidAmt.toFixed(2)}</span>
+                            <span className="text-amber-500">Saldo: C$ {credit.remaining_amount.toFixed(2)}</span>
+                          </div>
+                          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-neon-emerald to-neon-blue rounded-full transition-all"
+                              style={{ width: `${Math.min(100, progressPct)}%` }} />
+                          </div>
                         </div>
+
+                        {/* Payment history toggle */}
+                        {payments.length > 0 && (
+                          <button onClick={() => setExpanded(!expanded)}
+                            className="text-[10px] text-gray-500 hover:text-neon-blue text-left underline transition">
+                            {expanded ? 'Ocultar' : `Ver ${payments.length} pago(s) anterior(es)`}
+                          </button>
+                        )}
+                        {expanded && (
+                          <div className="space-y-1.5 mt-1">
+                            {payments.map((p) => (
+                              <div key={p.id} className="bg-white/2 border border-white/5 rounded p-2 text-[10px] flex justify-between items-center gap-2">
+                                <div>
+                                  <span className="text-gray-500 font-mono">{new Date(p.created_at).toLocaleDateString()}</span>
+                                  {p.notes && <span className="text-gray-400 block mt-0.5">{p.notes}</span>}
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-neon-emerald font-bold font-mono block">+ C$ {Number(p.amount).toFixed(2)}</span>
+                                  <span className="text-gray-500 capitalize">{p.payment_method === 'cash' ? 'Efectivo' : 'Transferencia'}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {!isPaid && (
                           <div className="flex gap-2 mt-1">
                             <button
@@ -436,14 +509,14 @@ export default function Clientes() {
                               className="flex-1 flex items-center justify-center gap-1.5 py-1 px-2.5 bg-neon-blue/20 hover:bg-neon-blue/30 text-neon-blue font-bold rounded text-xs transition"
                             >
                               <DollarSign size={12} />
-                              Abonar
+                              Registrar Abono
                             </button>
                             <button
                               onClick={() => handleCancelCredit(credit)}
                               className="py-1 px-2 border border-white/5 hover:border-rose-500/50 hover:bg-rose-500/10 text-gray-500 hover:text-rose-500 font-bold rounded text-xs transition"
                               title="Liquidar Total"
                             >
-                              Cancelar Deuda
+                              Liquidar Deuda
                             </button>
                           </div>
                         )}
@@ -580,8 +653,19 @@ export default function Clientes() {
                   className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm"
                 >
                   <option value="cash">Efectivo</option>
-                  <option value="transfer">Transferencia bancaria</option>
+                  <option value="transfer">Transferencia Bancaria</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Observaciones (Opcional)</label>
+                <input
+                  type="text"
+                  value={abonoForm.notes}
+                  onChange={(e) => setAbonoForm({ ...abonoForm, notes: e.target.value })}
+                  placeholder="Ej: Depósito bancario #1234..."
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm"
+                />
               </div>
 
               <div className="flex gap-3 justify-end pt-2">

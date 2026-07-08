@@ -124,7 +124,8 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       const { data: routesData } = await routeQuery.order('name', { ascending: true });
       setRoutes(routesData || []);
 
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching routes initial data:', err.message);
     } finally {
       setLoading(false);
@@ -142,7 +143,8 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
 
       if (error) throw error;
       setRouteClients(data || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching route clients:', err.message);
     } finally {
       setLoadingRouteDetails(false);
@@ -180,7 +182,8 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       setNewCollab({ name: '', phone: '', email: '', base_salary: '0', role_name: 'collaborator' });
       fetchInitialData();
       toast.success('Colaborador registrado con éxito');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error: ' + err.message);
     }
   }
@@ -204,7 +207,8 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       setNewRoute({ name: '', collaborator_id: '' });
       fetchInitialData();
       toast.success('Ruta creada con éxito');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error: ' + err.message);
     }
   }
@@ -232,7 +236,8 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       setNewRouteClient({ client_id: '', gps_latitude: '', gps_longitude: '', business_notes: '' });
       fetchRouteClients(selectedRoute.id);
       toast.success('Cliente agregado a la ruta');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error: ' + err.message);
     }
   }
@@ -276,7 +281,8 @@ export default function Rutas({ userRole, currentCollaboratorId }: RutasProps) {
       if (error) throw error;
       setCommissions(commissions.map(c => c.id === id ? { ...c, percentage } : c));
       toast.success('Comisión actualizada.');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error actualizando comisión: ' + err.message);
     }
   }

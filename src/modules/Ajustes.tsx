@@ -49,7 +49,7 @@ export default function Ajustes() {
       // Fetch settings
       const { data: settingsData } = await supabase.from('bv_settings').select('*');
       if (settingsData) {
-        const mappedSettings: any = {};
+        const mappedSettings: Record<string, string> = {};
         settingsData.forEach(s => {
           mappedSettings[s.key] = s.value;
         });
@@ -67,7 +67,8 @@ export default function Ajustes() {
       const { data: rolesData } = await supabase.from('bv_roles').select('*');
       if (rolesData) setRoles(rolesData);
 
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error cargando ajustes: ' + err.message);
     } finally {
       setLoading(false);
@@ -92,7 +93,8 @@ export default function Ajustes() {
       }
 
       toast.success('Ajustes del negocio guardados correctamente.');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error guardando ajustes: ' + err.message);
     } finally {
       setLoading(false);
@@ -124,7 +126,8 @@ export default function Ajustes() {
       if (error) throw error;
       toast.success(newStatus ? 'Usuario reactivado' : 'Usuario suspendido');
       fetchData();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error cambiando estado: ' + err.message);
     }
   }
@@ -156,8 +159,9 @@ export default function Ajustes() {
       toast.success('Usuario actualizado correctamente.');
       setEditingCollabId(null);
       fetchData();
-    } catch (err: any) {
-      toast.error('Error al actualizar usuario: ' + err.message);
+    } catch (error) {
+      const err = error as Error;
+      toast.error('Error actualizando colaborador: ' + err.message);
     }
   }
 

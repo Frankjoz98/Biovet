@@ -8,6 +8,7 @@ import type { Client } from './Clientes';
 interface CartItem {
   product: Product;
   quantity: number;
+  discountPct: number; // Porcentaje de descuento por ítem (0-100)
 }
 
 interface CashSession {
@@ -94,6 +95,16 @@ export default function Caja({ currentUserId }: CajaProps) {
   const [showRouteClosureModal, setShowRouteClosureModal] = useState(false);
   const [routeClosureSummary, setRouteClosureSummary] = useState<RouteClosingSummary | null>(null);
   const [closingRoute, setClosingRoute] = useState(false);
+
+  // Descuento global (sobre el total)
+  const [globalDiscountPct, setGlobalDiscountPct] = useState<string>('0');
+
+  // Modal de autorización de owner para crédito excedido
+  const [showCreditAuthModal, setShowCreditAuthModal] = useState(false);
+  const [creditAuthPassword, setCreditAuthPassword] = useState('');
+  const [creditAuthError, setCreditAuthError] = useState('');
+  const [creditAuthLoading, setCreditAuthLoading] = useState(false);
+  const [pendingSaleCallback, setPendingSaleCallback] = useState<(() => void) | null>(null);
 
   // Top products
   const [topProducts, setTopProducts] = useState<{product_id: string; name: string; total_qty: number}[]>([]);
@@ -184,7 +195,8 @@ export default function Caja({ currentUserId }: CajaProps) {
 
       if (error) throw error;
       setActiveSession(data || null);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error checking active cash session:', err.message);
     }
   }
@@ -201,7 +213,8 @@ export default function Caja({ currentUserId }: CajaProps) {
 
       if (error) throw error;
       setActiveRouteClosure(data || null);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error checking active route closure:', err.message);
     }
   }
@@ -227,7 +240,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       setActiveRouteClosure(data);
       setShowOpenRouteModal(false);
       toast.success('Jornada de ruta iniciada con éxito.');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error abriendo jornada de ruta: ' + err.message);
     }
   }
@@ -247,7 +261,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       // Refresh inventory after route close
       fetchInitialData();
       toast.success('Jornada de ruta finalizada.');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error cerrando jornada de ruta: ' + err.message);
     } finally {
       setClosingRoute(false);
@@ -288,7 +303,8 @@ export default function Caja({ currentUserId }: CajaProps) {
 
       setProducts(prodData || []);
       setClients(clientData || []);
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       console.error('Error fetching checkout data:', err.message);
     } finally {
       setLoading(false);
@@ -321,7 +337,7 @@ export default function Caja({ currentUserId }: CajaProps) {
         .limit(200);
       if (!data) return;
       const totals: Record<string, { name: string; total_qty: number }> = {};
-      data.forEach((item: any) => {
+      data.forEach((item: Record<string, unknown>) => {
         const pid = item.product_id;
         const name = item.bv_products?.name || 'Desconocido';
         if (!totals[pid]) totals[pid] = { name, total_qty: 0 };
@@ -380,7 +396,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       setActiveSession(data);
       setShowOpenSessionModal(false);
       toast.success('Caja chica abierta con éxito');
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error abriendo caja: ' + err.message);
     }
   }
@@ -421,7 +438,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       setCloseSessionForm({ real_nio: '', notes: '' });
       toast.success('Caja cerrada correctamente. Registro archivado.');
       checkActiveSession();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error cerrando caja: ' + err.message);
     }
   }
@@ -443,7 +461,7 @@ export default function Caja({ currentUserId }: CajaProps) {
       newCart[existingIndex].quantity = newQty;
       setCart(newCart);
     } else {
-      setCart([...cart, { product, quantity: 1 }]);
+      setCart([...cart, { product, quantity: 1, discountPct: 0 }]);
     }
   };
 
@@ -470,8 +488,23 @@ export default function Caja({ currentUserId }: CajaProps) {
     setCart(cart.filter(item => item.product.id !== productId));
   };
 
-  // Totals calculations
-  const cartTotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+  // Descuento individual por ítem
+  const updateItemDiscount = (productId: string, pct: number) => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    setCart(cart.map(item =>
+      item.product.id === productId ? { ...item, discountPct: clamped } : item
+    ));
+  };
+
+  // Totals calculations (con descuentos por ítem)
+  const cartSubtotal = cart.reduce((sum, item) => {
+    const itemTotal = item.product.price * item.quantity;
+    const itemDiscount = itemTotal * (item.discountPct / 100);
+    return sum + (itemTotal - itemDiscount);
+  }, 0);
+  const globalDiscountAmt = cartSubtotal * ((parseFloat(globalDiscountPct) || 0) / 100);
+  const cartTotal = Math.max(0, cartSubtotal - globalDiscountAmt);
+  const totalDiscountAmt = cart.reduce((sum, item) => sum + (item.product.price * item.quantity * (item.discountPct / 100)), 0) + globalDiscountAmt;
 
   const handleCompleteSale = async () => {
     if (cart.length === 0) {
@@ -503,21 +536,50 @@ export default function Caja({ currentUserId }: CajaProps) {
     }
 
     if (paymentMethod === 'credit' && selectedClient) {
-      // Validate credit limit
       const projectedDebt = selectedClient.current_debt + cartTotal;
       if (projectedDebt > selectedClient.credit_limit) {
-        const confirmOver = window.confirm(
-          `¡Límite de crédito excedido!\n\n` +
-          `Límite: C$ ${selectedClient.credit_limit.toFixed(2)}\n` +
-          `Deuda Actual: C$ ${selectedClient.current_debt.toFixed(2)}\n` +
-          `Venta Nueva: C$ ${cartTotal.toFixed(2)}\n` +
-          `Deuda Proyectada: C$ ${projectedDebt.toFixed(2)}\n\n` +
-          `¿Desea autorizar esta venta de todas formas?`
-        );
-        if (!confirmOver) return;
+        // Guardar el callback y abrir modal de autorización de owner
+        setPendingSaleCallback(() => () => executeSale(cartTotal, paidNio));
+        setShowCreditAuthModal(true);
+        return;
       }
     }
 
+    await executeSale(cartTotal, paidNio);
+  };
+
+  async function handleAuthorizeCreditSale() {
+    if (!creditAuthPassword) {
+      setCreditAuthError('Ingresa la contraseña del propietario.');
+      return;
+    }
+    setCreditAuthLoading(true);
+    setCreditAuthError('');
+    try {
+      // Verificar contraseña del usuario actual (debe ser owner)
+      const { data: sessionData } = await supabase.auth.getSession();
+      const email = sessionData?.session?.user?.email;
+      if (!email) throw new Error('No hay sesión activa.');
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: creditAuthPassword
+      });
+      if (signInError) throw new Error('Contraseña incorrecta. Autorización denegada.');
+
+      setShowCreditAuthModal(false);
+      setCreditAuthPassword('');
+      if (pendingSaleCallback) pendingSaleCallback();
+      setPendingSaleCallback(null);
+    } catch (error) {
+      const err = error as Error;
+      setCreditAuthError(err.message);
+    } finally {
+      setCreditAuthLoading(false);
+    }
+  }
+
+  const executeSale = async (convertedTotal: number, paidNio: number) => {
     try {
       // 1. Insert into bv_sales
       // Route sales link to active route closure; store sales link to active cash session
@@ -527,6 +589,7 @@ export default function Caja({ currentUserId }: CajaProps) {
           client_id: selectedClient?.id || null,
           payment_method: paymentMethod,
           total_amount: convertedTotal,
+          discount_amount: totalDiscountAmt,
           cash_received: paymentMethod === 'cash' ? paidNio : 0,
           payment_currency: 'NIO',
           exchange_rate: 1,
@@ -546,11 +609,12 @@ export default function Caja({ currentUserId }: CajaProps) {
 
       // 2. Insert items into bv_sale_items & calculate commissions
       for (const item of cart) {
-        // Find commission percentage
         const pCategory = item.product.category || 'Otros';
         const commissionRule = commissionsConfig.find(c => c.category_name.toLowerCase() === pCategory.toLowerCase());
         const commPercentage = commissionRule ? commissionRule.percentage : 0;
-        const totalItemPrice = item.product.price * item.quantity;
+        const baseItemPrice = item.product.price * item.quantity;
+        const itemDiscountAmt = baseItemPrice * (item.discountPct / 100);
+        const totalItemPrice = baseItemPrice - itemDiscountAmt;
         const commissionAmount = (totalItemPrice * commPercentage) / 100;
 
         const { error: itemError } = await supabase
@@ -604,7 +668,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       
       // Refresh inventory
       fetchInitialData();
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as Error;
       toast.error('Error procesando la venta: ' + err.message);
     }
   };
@@ -849,30 +914,51 @@ export default function Caja({ currentUserId }: CajaProps) {
               <p>El carrito de compra está vacío.</p>
             </div>
           ) : (
-            cart.map((item) => (
-              <div key={item.product.id} className="bg-white/2 border border-white/5 p-3 rounded-lg flex justify-between items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-xs font-semibold text-white truncate">{item.product.name}</h4>
-                  <span className="text-[10px] text-gray-400 font-mono">C$ {item.product.price.toFixed(2)} x {item.quantity}</span>
+            cart.map((item) => {
+              const itemBase = item.product.price * item.quantity;
+              const itemDiscounted = itemBase * (1 - item.discountPct / 100);
+              return (
+                <div key={item.product.id} className="bg-white/2 border border-white/5 p-3 rounded-lg space-y-2">
+                  <div className="flex justify-between items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-semibold text-white truncate">{item.product.name}</h4>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        C$ {item.product.price.toFixed(2)} x {item.quantity} = <b className="text-white">C$ {itemDiscounted.toFixed(2)}</b>
+                        {item.discountPct > 0 && <span className="ml-1 text-amber-400">(-{item.discountPct}%)</span>}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max={item.product.stock}
+                        value={item.quantity}
+                        onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                        className="w-12 bg-[#0d0d18] border border-white/10 rounded py-1 text-center font-mono text-xs text-white"
+                      />
+                      <button
+                        onClick={() => removeFromCart(item.product.id)}
+                        className="p-1 hover:bg-rose-500/10 rounded text-rose-500 transition"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  {/* Descuento por ítem */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wider">Dto.%:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={item.discountPct}
+                      onChange={(e) => updateItemDiscount(item.product.id, parseFloat(e.target.value) || 0)}
+                      className="w-16 bg-[#0d0d18] border border-amber-500/20 rounded py-0.5 px-1 text-center font-mono text-xs text-amber-400 focus:border-amber-400 outline-none"
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    max={item.product.stock}
-                    value={item.quantity}
-                    onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                    className="w-12 bg-[#0d0d18] border border-white/10 rounded py-1 text-center font-mono text-xs text-white"
-                  />
-                  <button
-                    onClick={() => removeFromCart(item.product.id)}
-                    className="p-1 hover:bg-rose-500/10 rounded text-rose-500 transition"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -939,14 +1025,42 @@ export default function Caja({ currentUserId }: CajaProps) {
         </div>
 
         {/* Checkout Controls */}
-        <div className="p-5 border-t border-white/5 bg-[#07070f] space-y-4">
-          
-          {/* Total Price (Enlarged) */}
-          <div className="flex justify-between items-end py-1">
-            <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Total a Cobrar</span>
-            <span className="text-3xl font-black font-mono text-white text-shadow-neon">
-              C$ {cartTotal.toFixed(2)}
-            </span>
+        <div className="p-5 border-t border-white/5 bg-[#07070f] space-y-3">
+
+          {/* Descuento global */}
+          <div className="flex items-center gap-2 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
+            <span className="text-xs text-gray-400 font-bold uppercase flex-1">Dto. Global %:</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={globalDiscountPct}
+              onChange={(e) => setGlobalDiscountPct(e.target.value)}
+              className="w-16 bg-transparent text-right font-mono text-sm text-amber-400 focus:outline-none font-bold"
+              placeholder="0"
+            />
+          </div>
+
+          {/* Subtotal + Descuento + Total */}
+          <div className="space-y-1">
+            {totalDiscountAmt > 0 && (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-xs">Subtotal:</span>
+                  <span className="text-xs font-mono text-gray-300">C$ {cartSubtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-amber-400 text-xs">Descuento:</span>
+                  <span className="text-xs font-mono text-amber-400">- C$ {totalDiscountAmt.toFixed(2)}</span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between items-end py-1">
+              <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Total a Cobrar</span>
+              <span className="text-3xl font-black font-mono text-white text-shadow-neon">
+                C$ {cartTotal.toFixed(2)}
+              </span>
+            </div>
           </div>
 
           {/* Payment Method Selector */}
@@ -998,6 +1112,49 @@ export default function Caja({ currentUserId }: CajaProps) {
         </div>
       </div>
     </div>
+
+    {/* Modal: Autorización Owner para crédito excedido */}
+    {showCreditAuthModal && (
+      <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="glass-panel w-full max-w-sm rounded-xl p-6 border border-rose-500/30 shadow-2xl">
+          <div className="flex items-center gap-3 mb-4">
+            <ShieldAlert className="text-rose-400" size={22} />
+            <div>
+              <h2 className="text-lg font-bold text-white">Autorización Requerida</h2>
+              <p className="text-xs text-rose-400">Límite de crédito excedido</p>
+            </div>
+          </div>
+          <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mb-4 text-xs space-y-1 font-mono">
+            <div className="flex justify-between"><span className="text-gray-400">Límite:</span><span className="text-white">C$ {selectedClient?.credit_limit.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Deuda actual:</span><span className="text-rose-400">C$ {selectedClient?.current_debt.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Esta venta:</span><span className="text-white">C$ {cartTotal.toFixed(2)}</span></div>
+          </div>
+          <p className="text-xs text-gray-400 mb-3">Ingresa tu contraseña de propietario para autorizar esta venta excepcional:</p>
+          <input
+            type="password"
+            value={creditAuthPassword}
+            onChange={(e) => { setCreditAuthPassword(e.target.value); setCreditAuthError(''); }}
+            placeholder="Contraseña..."
+            className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white text-sm mb-2 focus:outline-none focus:border-rose-400"
+          />
+          {creditAuthError && <p className="text-xs text-rose-400 mb-2">{creditAuthError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowCreditAuthModal(false); setCreditAuthPassword(''); setCreditAuthError(''); setPendingSaleCallback(null); }}
+              className="flex-1 py-2 border border-white/10 text-gray-400 rounded-lg text-xs font-bold hover:bg-white/5 transition"
+            >Cancelar</button>
+            <button
+              onClick={handleAuthorizeCreditSale}
+              disabled={creditAuthLoading}
+              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition"
+            >
+              {creditAuthLoading ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle size={13} />}
+              Autorizar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Opening Session Modal */}
       {showOpenSessionModal && (
