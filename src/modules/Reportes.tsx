@@ -237,11 +237,13 @@ export default function Reportes() {
         saleItemsData = data || [];
       }
 
-      // Build a quick sale_id → sale_type map
+      // Build a quick sale_id → sale_type map and payment-method map
       const saleTypeMap: Record<string, string> = {};
       const routeSaleIdMap: Record<string, string> = {};
+      const saleCreditMap: Record<string, boolean> = {}; // true = venta a crédito (ingreso NO contabilizado aún)
       activeSales.forEach(s => {
         saleTypeMap[s.id] = s.sale_type || 'store';
+        saleCreditMap[s.id] = s.payment_method === 'credit';
         if (s.sale_type === 'route' && s.route_id) routeSaleIdMap[s.id] = s.route_id;
       });
 
@@ -309,6 +311,10 @@ export default function Reportes() {
       let totalCommissions = 0;
 
       saleItemsData.forEach(item => {
+        // Opción A (base caja): si la venta es a crédito, su ingreso NO se contabiliza
+        // en la utilidad del período, por lo tanto su costo tampoco debe restarse.
+        if (saleCreditMap[item.sale_id]) return;
+
         const itemCogs = Number(item.quantity) * Number(item.unit_cost);
         const sType = saleTypeMap[item.sale_id];
         if (sType === 'route') {
