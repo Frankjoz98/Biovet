@@ -24,10 +24,11 @@
 Todos los módulos principales viven en `src/modules/` y se renderizan dinámicamente desde `App.tsx`.
 
 1. **`Caja.tsx` (POS y Facturación)**
-   - El corazón del sistema. Permite agregar productos al carrito y facturar.
-   - Soporta modalidades de pago: Efectivo, Crédito y Transferencia.
-   - Tiene dos pestañas ("Tienda" y "Ruta") que alteran el comportamiento del flujo.
-   - Maneja la emisión de recibos optimizados para **impresoras térmicas de 80mm**.
+   * **Layout de Pantalla Completa:** La cuadrícula de productos ocupa todo el ancho disponible (4-5 columnas según tamaño de pantalla) para maximizar la visibilidad del inventario.
+   * **Slide-over Panel de Facturación:** El carrito y checkout se manejan en un panel lateral derecho deslizable que se abre mediante un botón flotante ("Ver Factura") que muestra la cantidad de items y total actual. Esto previene errores humanos al aislar visualmente el checkout.
+   * **Descuento Global Dual:** Permite ingresar un descuento ya sea en porcentaje (`%`) o en valor monetario fijo en Córdobas (`C$`), sincronizando ambos campos en tiempo real de forma automática.
+   * Soporta modalidades de pago: Efectivo (calculando y mostrando el cambio automáticamente), Crédito y Transferencia.
+   * Maneja la emisión de recibos optimizados para **impresoras térmicas de 80mm**.
 
 2. **`Inventario.tsx`**
    - CRUD del catálogo de productos.
@@ -36,6 +37,7 @@ Todos los módulos principales viven en `src/modules/` y se renderizan dinámica
 3. **`Clientes.tsx`**
    - Administración del directorio.
    - Control de métricas crediticias: `credit_limit` y `current_debt`.
+   - Estado de expansión de créditos indexado de forma segura en reactividad (sin llamadas a hooks dentro de loops).
 
 4. **`Rutas.tsx`**
    - Gestión de zonas geográficas o vendedores.
@@ -45,6 +47,11 @@ Todos los módulos principales viven en `src/modules/` y se renderizan dinámica
    - Dashboard analítico con resumen P&L (Pérdidas y Ganancias).
    - Discrimina entre Ventas Locales y Ventas de Ruta.
    - Contabiliza los "Gastos Operativos" (provenientes de Caja) para deducirlos del ingreso neto.
+
+6. **`Ajustes.tsx`**
+   - Gestión de datos generales de facturación del negocio (nombre, dirección, teléfono, sitio web).
+   - Administración de colaboradores, salarios base, activación/suspensión de accesos y reseteo de contraseñas.
+   - **Tab de Seguridad:** Permite al usuario actual cambiar su propia contraseña. Cuenta con verificación de contraseña actual, visualizador de fortaleza (4 niveles visuales) y comparador visual en tiempo real de coincidencia.
 
 ---
 
@@ -56,19 +63,20 @@ La tabla `bv_sales` contiene una columna clave `sale_type` (`store` o `route`).
 - Las ventas de `route` se asocian a un **Cierre de Jornada de Ruta** (`bv_route_closings`).
 
 ### 2. Comisiones Dinámicas (Rutas)
-A diferencia de un salario fijo, los vendedores ganan un porcentaje dependiendo de la *categoría* del producto vendido (ej. Alimento de gatos = 3%, Accesorios = 5%).
+Los vendedores ganan un porcentaje dependiendo de la *categoría* del producto vendido (ej. Alimento de gatos = 3%, Accesorios = 5%).
 - Esto se define en la tabla `bv_category_commissions`.
 - **Cierre Atómico:** Cuando un vendedor termina su ruta, se llama al procedimiento almacenado (RPC) `bv_close_route(p_route_closing_id)`. Este RPC calcula del lado del servidor el total vendido por categoría y asigna las comisiones de manera 100% segura.
 
 ### 3. Manejo de Stock (Condiciones de Carrera)
 **Regla crítica:** ¡NUNCA restar inventario desde el Frontend (React)!
-Si dos personas facturan el mismo producto simultáneamente leyendo el array del carrito, podrían corromper el inventario.
 - **Solución:** Se diseñó el procedimiento almacenado `bv_decrement_stock(p_product_id, p_quantity)` en Supabase. Cada venta iterada en el frontend manda a llamar este RPC para restar el stock atómicamente a nivel de la base de datos PostgreSQL.
 
-### 4. Notificaciones UI (Toasts)
-No se deben usar alertas nativas (`alert()`) por motivos estéticos.
-Se creó un helper en `src/lib/toast.ts` que emite un evento personalizado (`biovet-toast`).
-- **Uso:** `import { toast } from '../lib/toast';` -> `toast.success('Mensaje')` o `toast.error('Error')`.
+### 4. Control de Límite de Crédito
+- Si una venta al crédito excede el límite asignado al cliente (`credit_limit`), el sistema interrumpe la transacción y despliega un modal requiriendo la contraseña de autorización del usuario con rol **Owner** (Propietario).
+
+### 5. Estado de Limpieza para Entrega (Producción)
+- **Datos transaccionales:** Todas las tablas transaccionales (`bv_sales`, `bv_sale_items`, `bv_credits`, `bv_credit_payments`, `bv_cash_sessions`, `bv_purchases`, `bv_purchase_items`, `bv_expenses`, `bv_audit_log`) fueron purgadas de pruebas para dejar el sistema limpio.
+- **Usuarios de prueba:** Se eliminaron las cuentas secundarias y de desarrollo de `auth.users` y `bv_collaborators`, quedando únicamente **Jose Alejandro Perez Miranda** (`jperezm300698@gmail.com`) como único usuario activo con rol `owner`.
 
 ---
 
@@ -82,8 +90,8 @@ Para las siguientes conversaciones o sprints, estos son los problemas pendientes
    - Actualmente un cliente acumula `current_debt`. Se necesita un módulo/modal para registrar "Abonos", donde un cliente paga parte de su deuda.
 3. **Paginación / Virtualización**
    - Si la tabla `bv_sales` supera los miles de registros, la carga frontal del Reporte o la Caja podría saturarse. Implementar paginación con `range()` en Supabase.
-4. **Configuración de Empresa (Recibos)**
-   - Sustituir la data quemada (hardcoded) del nombre de la clínica veterinaria en el recibo por datos dinámicos provenientes de una tabla `bv_settings`.
+4. **Activación de Row Level Security (RLS)**
+   - Habilitar RLS en las 20 tablas de Supabase y configurar políticas de acceso restrictivas (ej. permitir lecturas/escrituras solo a usuarios autenticados) para evitar vulnerabilidades mediante la API key anónima.
 
 ---
-*Documento actualizado tras completar el Sprint de Rutas, Comisiones y UI de Caja (Julio 2026).*
+*Documento actualizado tras la entrega y puesta a punto de producción (Julio 2026).*
