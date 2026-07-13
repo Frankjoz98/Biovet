@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { Settings, Save, Shield, Users, Mail, UserX, Loader2, Edit2, Check, X } from 'lucide-react';
+import { Settings, Save, Shield, Users, Mail, UserX, Loader2, Edit2, Check, X, Lock, Eye, EyeOff } from 'lucide-react';
 
 interface BusinessSettings {
   business_name: string;
@@ -22,8 +22,13 @@ interface Collaborator {
 }
 
 export default function Ajustes() {
-  const [activeTab, setActiveTab] = useState<'negocio' | 'usuarios'>('negocio');
+  const [activeTab, setActiveTab] = useState<'negocio' | 'usuarios' | 'seguridad'>('negocio');
   const [loading, setLoading] = useState(false);
+
+  // Password change state
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [pwLoading, setPwLoading] = useState(false);
+  const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false });
 
   // Business settings state
   const [settings, setSettings] = useState<BusinessSettings>({
@@ -165,6 +170,43 @@ export default function Ajustes() {
     }
   }
 
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pwForm.next || pwForm.next.length < 6) {
+      toast.error('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (pwForm.next !== pwForm.confirm) {
+      toast.error('Las contraseñas no coinciden.');
+      return;
+    }
+    setPwLoading(true);
+    try {
+      // Verify current password by re-signing in
+      const { data: sessionData } = await supabase.auth.getSession();
+      const email = sessionData?.session?.user?.email;
+      if (!email) throw new Error('No hay sesión activa.');
+
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email,
+        password: pwForm.current,
+      });
+      if (verifyError) throw new Error('La contraseña actual es incorrecta.');
+
+      // Update password
+      const { error: updateError } = await supabase.auth.updateUser({ password: pwForm.next });
+      if (updateError) throw updateError;
+
+      toast.success('¡Contraseña actualizada exitosamente!');
+      setPwForm({ current: '', next: '', confirm: '' });
+    } catch (error) {
+      const err = error as Error;
+      toast.error(err.message);
+    } finally {
+      setPwLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -194,6 +236,14 @@ export default function Ajustes() {
           }`}
         >
           Gestión de Usuarios
+        </button>
+        <button
+          onClick={() => setActiveTab('seguridad')}
+          className={`px-6 py-2 rounded-lg text-sm font-semibold transition ${
+            activeTab === 'seguridad' ? 'bg-rose-500/20 text-rose-400 shadow-lg' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          Seguridad
         </button>
       </div>
 
@@ -395,6 +445,117 @@ export default function Ajustes() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+      {/* Seguridad Tab */}
+      {activeTab === 'seguridad' && (
+        <div className="glass-panel rounded-2xl p-6 border border-rose-500/10 max-w-lg">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-rose-500/10 rounded-lg">
+              <Lock size={20} className="text-rose-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Cambiar Contraseña</h2>
+              <p className="text-xs text-gray-400">Actualiza la contraseña de tu cuenta de acceso.</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            {/* Contraseña actual */}
+            <div>
+              <label className="block text-xs font-semibold uppercase text-gray-400 mb-1.5">Contraseña Actual</label>
+              <div className="relative">
+                <input
+                  type={showPw.current ? 'text' : 'password'}
+                  value={pwForm.current}
+                  onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
+                  placeholder="Tu contraseña actual"
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 pr-10 text-white focus:border-rose-500/50 outline-none transition text-sm"
+                  required
+                />
+                <button type="button" onClick={() => setShowPw({ ...showPw, current: !showPw.current })}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition">
+                  {showPw.current ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Nueva contraseña */}
+            <div>
+              <label className="block text-xs font-semibold uppercase text-gray-400 mb-1.5">Nueva Contraseña</label>
+              <div className="relative">
+                <input
+                  type={showPw.next ? 'text' : 'password'}
+                  value={pwForm.next}
+                  onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+                  placeholder="Mínimo 6 caracteres"
+                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 pr-10 text-white focus:border-rose-500/50 outline-none transition text-sm"
+                  required
+                />
+                <button type="button" onClick={() => setShowPw({ ...showPw, next: !showPw.next })}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition">
+                  {showPw.next ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              {/* Strength indicator */}
+              {pwForm.next.length > 0 && (
+                <div className="flex gap-1 mt-1.5">
+                  {[1,2,3,4].map((lvl) => (
+                    <div key={lvl} className={`h-1 flex-1 rounded-full transition-all ${
+                      pwForm.next.length >= lvl * 3
+                        ? lvl <= 1 ? 'bg-rose-500'
+                          : lvl <= 2 ? 'bg-amber-500'
+                          : lvl <= 3 ? 'bg-yellow-400'
+                          : 'bg-neon-emerald'
+                        : 'bg-white/10'
+                    }`} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Confirmar contraseña */}
+            <div>
+              <label className="block text-xs font-semibold uppercase text-gray-400 mb-1.5">Confirmar Contraseña</label>
+              <div className="relative">
+                <input
+                  type={showPw.confirm ? 'text' : 'password'}
+                  value={pwForm.confirm}
+                  onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                  placeholder="Repite la nueva contraseña"
+                  className={`w-full bg-[#0d0d18] border rounded-lg p-2.5 pr-10 text-white focus:outline-none transition text-sm ${
+                    pwForm.confirm && pwForm.next !== pwForm.confirm
+                      ? 'border-rose-500/60'
+                      : pwForm.confirm && pwForm.next === pwForm.confirm
+                      ? 'border-neon-emerald/60'
+                      : 'border-white/10'
+                  }`}
+                  required
+                />
+                <button type="button" onClick={() => setShowPw({ ...showPw, confirm: !showPw.confirm })}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition">
+                  {showPw.confirm ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              {pwForm.confirm && pwForm.next !== pwForm.confirm && (
+                <p className="text-[11px] text-rose-400 mt-1">Las contraseñas no coinciden</p>
+              )}
+              {pwForm.confirm && pwForm.next === pwForm.confirm && (
+                <p className="text-[11px] text-neon-emerald mt-1">✓ Las contraseñas coinciden</p>
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={pwLoading || !pwForm.current || !pwForm.next || !pwForm.confirm}
+                className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg flex items-center justify-center gap-2 transition"
+              >
+                {pwLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
+                {pwLoading ? 'Actualizando...' : 'Actualizar Contraseña'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
