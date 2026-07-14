@@ -45,16 +45,17 @@ function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        fetchUserProfile(session.user.id);
+        fetchUserProfile(session.user.id, true);
       } else {
         setAuthLoading(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (session?.user) {
-        fetchUserProfile(session.user.id);
+        // Evitar recargar la interfaz y desmontar componentes si solo es un refresco de token en background
+        fetchUserProfile(session.user.id, event === 'SIGNED_IN');
       } else {
         setUserProfile(null);
         setAuthLoading(false);
@@ -81,8 +82,8 @@ function App() {
     };
   }, []);
 
-  async function fetchUserProfile(authUserId: string) {
-    setAuthLoading(true);
+  async function fetchUserProfile(authUserId: string, showLoadingScreen = false) {
+    if (showLoadingScreen) setAuthLoading(true);
     try {
       const { data, error } = await supabase
         .from('bv_collaborators')
