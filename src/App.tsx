@@ -45,7 +45,7 @@ function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        fetchUserProfile(session.user.id, true);
+        fetchUserProfile(session.user.id);
       } else {
         setAuthLoading(false);
       }
@@ -54,8 +54,9 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (session?.user) {
-        // Evitar recargar la interfaz y desmontar componentes si solo es un refresco de token en background
-        fetchUserProfile(session.user.id, event === 'SIGNED_IN');
+        // Nunca mostrar la pantalla de carga global en eventos de background o cambios de pestaña.
+        // La pantalla de carga solo se muestra al inicio (authLoading inicia en true por defecto).
+        fetchUserProfile(session.user.id);
       } else {
         setUserProfile(null);
         setAuthLoading(false);
@@ -82,8 +83,7 @@ function App() {
     };
   }, []);
 
-  async function fetchUserProfile(authUserId: string, showLoadingScreen = false) {
-    if (showLoadingScreen) setAuthLoading(true);
+  async function fetchUserProfile(authUserId: string) {
     try {
       const { data, error } = await supabase
         .from('bv_collaborators')
