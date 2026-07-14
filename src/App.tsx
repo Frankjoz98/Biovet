@@ -51,7 +51,7 @@ function App() {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user) {
         // Nunca mostrar la pantalla de carga global en eventos de background o cambios de pestaña.
