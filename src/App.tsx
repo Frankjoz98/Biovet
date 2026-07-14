@@ -237,18 +237,36 @@ function App() {
       {/* Main Content Stage */}
       <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto md:h-screen">
         <div className="max-w-7xl mx-auto">
-          {activeTab === 'caja' && <Caja currentUserId={userProfile.id} />}
-          {activeTab === 'inventario' && <Inventario userRole={role === 'collaborator' ? 'collaborator' : 'admin'} />}
-          {activeTab === 'clientes' && <Clientes />}
-          {activeTab === 'rutas' && (
+          <div style={{ display: activeTab === 'caja' ? 'block' : 'none' }}>
+            <Caja currentUserId={userProfile.id} />
+          </div>
+          <div style={{ display: activeTab === 'inventario' ? 'block' : 'none' }}>
+            <Inventario userRole={role === 'collaborator' ? 'collaborator' : 'admin'} />
+          </div>
+          <div style={{ display: activeTab === 'clientes' ? 'block' : 'none' }}>
+            <Clientes />
+          </div>
+          <div style={{ display: activeTab === 'rutas' ? 'block' : 'none' }}>
             <Rutas
               userRole={role === 'collaborator' ? 'collaborator' : 'admin'}
               currentCollaboratorId={userProfile.id}
             />
+          </div>
+          {isPrivileged && (
+            <div style={{ display: activeTab === 'reportes' ? 'block' : 'none' }}>
+              <Reportes />
+            </div>
           )}
-          {activeTab === 'reportes' && isPrivileged && <Reportes />}
-          {activeTab === 'bitacora' && role === 'owner' && <Bitacora />}
-          {activeTab === 'ajustes' && isPrivileged && <Ajustes />}
+          {role === 'owner' && (
+            <div style={{ display: activeTab === 'bitacora' ? 'block' : 'none' }}>
+              <Bitacora />
+            </div>
+          )}
+          {isPrivileged && (
+            <div style={{ display: activeTab === 'ajustes' ? 'block' : 'none' }}>
+              <Ajustes />
+            </div>
+          )}
         </div>
       </main>
 

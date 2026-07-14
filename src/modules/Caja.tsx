@@ -102,6 +102,7 @@ export default function Caja({ currentUserId }: CajaProps) {
 
   // Panel de facturación (slide-over)
   const [showCartPanel, setShowCartPanel] = useState(false);
+  const [cartProductSearch, setCartProductSearch] = useState('');
 
   // Modal de autorización de owner para crédito excedido
   const [showCreditAuthModal, setShowCreditAuthModal] = useState(false);
@@ -945,12 +946,54 @@ export default function Caja({ currentUserId }: CajaProps) {
           {/* Left Column — Cart Items */}
           <div className="flex-1 flex flex-col h-full border-r border-white/10 relative">
             {/* Header */}
-            <div className="flex items-center gap-3 px-8 py-5 border-b border-white/10 bg-white/2 shrink-0">
-              <ShoppingCart size={24} className="text-neon-blue" />
-              <h2 className="font-bold text-white text-xl">Factura en Curso</h2>
-              <span className="text-sm font-mono font-bold bg-neon-blue/20 text-neon-blue px-3 py-1 rounded-full ml-2">
-                {cart.reduce((sum, item) => sum + item.quantity, 0)} items
-              </span>
+            <div className="flex items-center justify-between gap-3 px-8 py-5 border-b border-white/10 bg-white/2 shrink-0">
+              <div className="flex items-center gap-3">
+                <ShoppingCart size={24} className="text-neon-blue" />
+                <h2 className="font-bold text-white text-xl">Factura en Curso</h2>
+                <span className="text-sm font-mono font-bold bg-neon-blue/20 text-neon-blue px-3 py-1 rounded-full ml-2">
+                  {cart.reduce((sum, item) => sum + item.quantity, 0)} items
+                </span>
+              </div>
+              
+              {/* Buscador Rápido de Productos */}
+              <div className="relative w-80">
+                <div className="flex items-center bg-black/40 border border-white/10 rounded-lg px-3 py-2">
+                  <Search size={16} className="text-gray-500 mr-2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar producto para agregar..."
+                    value={cartProductSearch}
+                    onChange={(e) => setCartProductSearch(e.target.value)}
+                    className="bg-transparent text-sm text-white w-full focus:outline-none"
+                  />
+                  {cartProductSearch && (
+                    <button onClick={() => setCartProductSearch('')} className="text-gray-500 hover:text-white ml-2 transition">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                {cartProductSearch.trim() !== '' && (
+                  <div className="absolute top-full mt-2 left-0 right-0 bg-[#0d0d18] border border-white/10 rounded-xl shadow-2xl max-h-64 overflow-y-auto z-50 py-1">
+                    {products.filter(p => p.name.toLowerCase().includes(cartProductSearch.toLowerCase()) || p.code.toLowerCase().includes(cartProductSearch.toLowerCase())).slice(0, 8).map(p => (
+                      <button
+                        key={p.id}
+                        disabled={p.stock <= 0}
+                        onClick={() => { addToCart(p); setCartProductSearch(''); }}
+                        className="w-full text-left px-4 py-3 hover:bg-white/5 border-b border-white/5 last:border-0 flex justify-between items-center transition disabled:opacity-50"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <h4 className="text-sm font-bold text-white truncate">{p.name}</h4>
+                          <span className="text-xs text-gray-500 font-mono">{p.code} - Stock: {p.stock}</span>
+                        </div>
+                        <span className="text-neon-blue font-bold text-sm font-mono whitespace-nowrap">C$ {p.price.toFixed(2)}</span>
+                      </button>
+                    ))}
+                    {products.filter(p => p.name.toLowerCase().includes(cartProductSearch.toLowerCase()) || p.code.toLowerCase().includes(cartProductSearch.toLowerCase())).length === 0 && (
+                      <div className="p-4 text-center text-gray-500 text-sm">No se encontraron productos</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Items List */}
@@ -1035,7 +1078,7 @@ export default function Caja({ currentUserId }: CajaProps) {
             <div className="flex justify-end p-4 shrink-0 border-b border-white/5 bg-white/2">
               <button
                 onClick={() => setShowCartPanel(false)}
-                className="px-4 py-2 text-gray-300 hover:text-white hover:bg-rose-500/20 hover:text-rose-400 rounded-xl transition bg-white/5 flex items-center gap-2 border border-white/5"
+                className="px-4 py-2 text-gray-300 hover:bg-rose-500/20 hover:text-rose-400 rounded-xl transition bg-white/5 flex items-center gap-2 border border-white/5"
               >
                 <span className="text-xs font-bold uppercase tracking-wider">Cerrar y volver</span>
                 <X size={18} />
@@ -1093,7 +1136,7 @@ export default function Caja({ currentUserId }: CajaProps) {
 
               {/* Descuentos Globales */}
               <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5 shadow-inner">
-                <span className="text-xs text-amber-400 font-bold uppercase tracking-wider block mb-3 flex items-center gap-1.5"><Percent size={14}/> Descuento Global</span>
+                <span className="text-xs text-amber-400 font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5"><Percent size={14}/> Descuento Global</span>
                 <div className="flex gap-4">
                   <div className="flex-1 flex items-center gap-2 bg-black/40 border border-white/5 rounded-lg px-3 py-2.5">
                     <span className="text-xs text-gray-500 font-bold shrink-0">Porcentaje %</span>
@@ -1126,10 +1169,10 @@ export default function Caja({ currentUserId }: CajaProps) {
                   </>
                 )}
                 <div className="flex justify-between items-end">
-                  <span className="text-gray-200 text-xl font-bold uppercase tracking-widest mb-1">Total a Cobrar</span>
+                  <span className="text-gray-200 text-lg font-bold uppercase tracking-widest mb-1">Total a Cobrar</span>
                   <div className="text-right">
-                    <span className="text-2xl text-neon-blue/60 font-bold mr-1 block -mb-2">C$</span>
-                    <span className="text-[3.5rem] leading-none font-black font-mono text-neon-blue drop-shadow-[0_0_15px_rgba(0,240,255,0.4)] tracking-tighter">
+                    <span className="text-xl text-neon-blue/60 font-bold mr-1 block -mb-1">C$</span>
+                    <span className="text-[2.5rem] leading-none font-black font-mono text-neon-blue drop-shadow-[0_0_15px_rgba(0,240,255,0.4)] tracking-tighter">
                       {cartTotal.toFixed(2)}
                     </span>
                   </div>
@@ -1159,10 +1202,10 @@ export default function Caja({ currentUserId }: CajaProps) {
                 <div className="flex gap-4 items-center bg-[#0d0d18] border border-neon-blue/50 p-5 rounded-2xl shadow-[0_0_20px_rgba(0,240,255,0.1)] mt-4">
                   <span className="text-sm text-neon-blue font-bold uppercase shrink-0">Efectivo Recibido:</span>
                   <div className="flex-1 flex items-center gap-2 border-b-2 border-neon-blue/50 pb-1">
-                    <span className="text-xl text-white font-bold">C$</span>
+                    <span className="text-lg text-white font-bold">C$</span>
                     <input type="number" placeholder="0.00" value={cashReceivedNio}
                       onChange={(e) => setCashReceivedNio(e.target.value)}
-                      className="w-full bg-transparent text-right font-mono text-3xl text-white focus:outline-none font-black" />
+                      className="w-full bg-transparent text-right font-mono text-2xl text-white focus:outline-none font-black" />
                   </div>
                 </div>
               )}
@@ -1171,17 +1214,17 @@ export default function Caja({ currentUserId }: CajaProps) {
               {paymentMethod === 'cash' && parseFloat(cashReceivedNio) > cartTotal && (
                 <div className="bg-neon-emerald/10 border border-neon-emerald/30 text-neon-emerald rounded-2xl p-5 text-center mt-4">
                   <span className="block text-sm uppercase font-bold mb-1 opacity-80">Cambio a Entregar al Cliente</span>
-                  <span className="text-5xl font-black font-mono tracking-tighter">C$ {(parseFloat(cashReceivedNio) - cartTotal).toFixed(2)}</span>
+                  <span className="text-4xl font-black font-mono tracking-tighter">C$ {(parseFloat(cashReceivedNio) - cartTotal).toFixed(2)}</span>
                 </div>
               )}
 
             </div>
             
             {/* Action Button at very bottom */}
-            <div className="p-8 bg-black/40 border-t border-white/5 mt-auto shrink-0">
+            <div className="p-6 bg-black/40 border-t border-white/5 mt-auto shrink-0">
               <button onClick={handleCompleteSale} disabled={cart.length === 0}
-                className="w-full flex items-center justify-center gap-3 py-6 bg-neon-blue hover:bg-neon-blue/80 text-black font-black uppercase tracking-widest rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0_0_30px_rgba(0,240,255,0.4)] hover:scale-[1.02] transform">
-                Completar Transacción <ArrowRight size={26} />
+                className="w-full flex items-center justify-center gap-3 py-4 bg-neon-blue hover:bg-neon-blue/80 text-black font-black uppercase tracking-widest rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed text-base shadow-[0_0_30px_rgba(0,240,255,0.4)] hover:scale-[1.02] transform">
+                Completar Transacción <ArrowRight size={22} />
               </button>
             </div>
 
