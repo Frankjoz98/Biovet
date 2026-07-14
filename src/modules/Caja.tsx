@@ -110,6 +110,14 @@ export default function Caja({ currentUserId }: CajaProps) {
   const [creditAuthLoading, setCreditAuthLoading] = useState(false);
   const [pendingSaleCallback, setPendingSaleCallback] = useState<(() => void) | null>(null);
 
+  // Pre-cierre informativo
+  const [showPreCloseModal, setShowPreCloseModal] = useState(false);
+  const [preCloseData, setPreCloseData] = useState<{
+    cashSales: number;
+    transferSales: number;
+    creditSales: number;
+    expectedCash: number;
+  } | null>(null);
 
   // Business settings state
   const [businessSettings, setBusinessSettings] = useState({
@@ -381,19 +389,55 @@ export default function Caja({ currentUserId }: CajaProps) {
   }
 
   // Handle Session Closing
+  async function handleOpenPreClose() {
+    if (!activeSession) return;
+    try {
+      const { data: salesData } = await supabase
+        .from('bv_sales')
+        .select('total_amount, payment_method')
+        .eq('cash_session_id', activeSession.id)
+        .eq('status', 'active');
+
+      const cashSales = (salesData || [])
+        .filter(s => s.payment_method === 'cash')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+      const transferSales = (salesData || [])
+        .filter(s => s.payment_method === 'transfer')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+      const creditSales = (salesData || [])
+        .filter(s => s.payment_method === 'credit')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales + transferSales;
+
+      setPreCloseData({ cashSales, transferSales, creditSales, expectedCash });
+      setShowPreCloseModal(true);
+    } catch (error) {
+      const err = error as Error;
+      toast.error('Error al cargar pre-cierre: ' + err.message);
+    }
+  }
+
   async function handleCloseSession(e: React.FormEvent) {
     e.preventDefault();
     if (!activeSession) return;
 
     try {
-      // Calculate expected sales from active (non-voided) sales in this session
       const { data: salesData } = await supabase
         .from('bv_sales')
-        .select('total_amount')
+        .select('total_amount, payment_method')
         .eq('cash_session_id', activeSession.id)
         .eq('status', 'active');
 
-      const totalSalesNio = (salesData || []).reduce((sum, s) => sum + Number(s.total_amount), 0);
+      // Solo efectivo y transferencia cuentan como esperado en caja física
+      const totalSalesNio = (salesData || [])
+        .filter(s => s.payment_method !== 'credit')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+      // Los créditos se guardan separados (no son efectivo, no generan faltante)
+      const totalCreditNio = (salesData || [])
+        .filter(s => s.payment_method === 'credit')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
       const realNio = parseFloat(closeSessionForm.real_nio) || 0;
 
       const { error } = await supabase
@@ -404,6 +448,7 @@ export default function Caja({ currentUserId }: CajaProps) {
           expected_sales_usd: 0,
           real_cash_nio: realNio,
           real_cash_usd: 0,
+          credit_amount_nio: totalCreditNio,
           difference_notes: closeSessionForm.notes,
           status: 'closed'
         })
@@ -413,6 +458,7 @@ export default function Caja({ currentUserId }: CajaProps) {
 
       setActiveSession(null);
       setShowCloseSessionModal(false);
+      setPreCloseData(null);
       setCloseSessionForm({ real_nio: '', notes: '' });
       toast.success('Caja cerrada correctamente. Registro archivado.');
       checkActiveSession();
@@ -812,7 +858,7 @@ export default function Caja({ currentUserId }: CajaProps) {
           {posTab === 'store' && (
             activeSession ? (
               <button
-                onClick={() => setShowCloseSessionModal(true)}
+                onClick={() => handleOpenPreClose()}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5"
               >
                 <Coins size={14} />
@@ -900,8 +946,8 @@ export default function Caja({ currentUserId }: CajaProps) {
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowCartPanel(false)}
           />
-          {/* Panel */}
-          <div className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-lg flex flex-col bg-[#08080f] border-l border-white/10 shadow-2xl overflow-hidden">
+          {/* Panel — más amplio para mayor legibilidad */}
+          <div className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-2xl flex flex-col bg-[#08080f] border-l border-white/10 shadow-2xl overflow-hidden">
             {/* Header */}
             <div className="flex justify-between items-center px-6 py-4 border-b border-white/10 bg-white/2 shrink-0">
               <div className="flex items-center gap-2">
@@ -925,10 +971,10 @@ export default function Caja({ currentUserId }: CajaProps) {
                 const itemBase = item.product.price * item.quantity;
                 const itemDiscounted = itemBase * (1 - item.discountPct / 100);
                 return (
-                  <div key={item.product.id} className="bg-white/3 border border-white/8 p-4 rounded-xl space-y-3">
+                  <div key={item.product.id} className="bg-white/3 border border-white/8 p-5 rounded-xl space-y-4">
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-bold text-white">{item.product.name}</h4>
+                        <h4 className="text-base font-bold text-white leading-tight">{item.product.name}</h4>
                         <span className="text-xs text-gray-500 font-mono">{item.product.code}</span>
                       </div>
                       <button
@@ -1176,6 +1222,70 @@ export default function Caja({ currentUserId }: CajaProps) {
                 Abrir Turno de Caja
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pre-Cierre Informativo */}
+      {showPreCloseModal && preCloseData && (
+        <div className="fixed inset-0 z-40 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-md rounded-xl p-6 border border-amber-500/20 shadow-2xl">
+            <div className="flex justify-between items-start mb-5">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Coins className="text-amber-400" size={20} />
+                  Pre-Cierre de Caja
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">Revise los totales antes de contar el efectivo físico.</p>
+              </div>
+              <button onClick={() => setShowPreCloseModal(false)} className="text-gray-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Tabla de resumen */}
+            <div className="space-y-2 mb-5">
+              <div className="flex justify-between items-center py-2.5 px-4 bg-white/3 rounded-lg">
+                <span className="text-sm text-gray-400">Fondo inicial de apertura</span>
+                <span className="font-mono font-bold text-white">C$ {Number(activeSession?.initial_cash_nio || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 bg-white/3 rounded-lg">
+                <span className="text-sm text-gray-400">Ventas cobradas en efectivo</span>
+                <span className="font-mono font-bold text-neon-emerald">+ C$ {preCloseData.cashSales.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 bg-white/3 rounded-lg">
+                <span className="text-sm text-gray-400">Ventas por transferencia</span>
+                <span className="font-mono font-bold text-neon-blue">+ C$ {preCloseData.transferSales.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 border-t border-white/10 mt-1 pt-3">
+                <span className="text-sm font-bold text-white uppercase tracking-wide">Total esperado en caja</span>
+                <span className="font-mono font-black text-xl text-white">C$ {preCloseData.expectedCash.toFixed(2)}</span>
+              </div>
+              {preCloseData.creditSales > 0 && (
+                <div className="flex justify-between items-center py-2.5 px-4 bg-amber-500/5 border border-amber-500/20 rounded-lg mt-2">
+                  <div>
+                    <span className="text-sm text-amber-400 font-semibold">Vendido al crédito</span>
+                    <p className="text-[10px] text-gray-500">No está en caja — está en cartera por cobrar</p>
+                  </div>
+                  <span className="font-mono font-bold text-amber-400">C$ {preCloseData.creditSales.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-gray-500 mb-4 text-center">
+              Cuente el efectivo físico de su caja y compárelo con el <span className="text-white font-semibold">Total esperado</span> antes de continuar.
+            </p>
+
+            <button
+              onClick={() => {
+                setShowPreCloseModal(false);
+                setShowCloseSessionModal(true);
+              }}
+              className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold uppercase rounded-lg text-xs transition flex items-center justify-center gap-2"
+            >
+              <ShieldAlert size={14} />
+              Proceder al Cierre Definitivo
+            </button>
           </div>
         </div>
       )}

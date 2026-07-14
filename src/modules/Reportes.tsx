@@ -66,6 +66,7 @@ interface CashSession {
   initial_cash_nio: number;
   expected_sales_nio: number;
   real_cash_nio: number | null;
+  credit_amount_nio: number;
   status: string;
   difference_notes: string | null;
   opened_by: string;
@@ -918,6 +919,7 @@ export default function Reportes() {
                     <th className="py-3.5 px-5 text-right">Inicial (C$)</th>
                     <th className="py-3.5 px-5 text-right">Esperado (C$)</th>
                     <th className="py-3.5 px-5 text-right">Reportado (C$)</th>
+                    <th className="py-3.5 px-5">Crédito (C$)</th>
                     <th className="py-3.5 px-5">Responsable</th>
                     <th className="py-3.5 px-5">Diferencia / Notas</th>
                   </tr>
@@ -963,6 +965,16 @@ export default function Reportes() {
                               <span>C$ {real.toFixed(2)}</span>
                             ) : (
                               <span className="text-gray-500">—</span>
+                            )}
+                          </td>
+                          {/* Crédito — separado del faltante */}
+                          <td className="py-3.5 px-5">
+                            {isClosed && Number(cs.credit_amount_nio || 0) > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                                Crédito C$ {Number(cs.credit_amount_nio).toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-600 text-[10px]">—</span>
                             )}
                           </td>
                           <td className="py-3.5 px-5">
