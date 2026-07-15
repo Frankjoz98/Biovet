@@ -958,7 +958,7 @@ export default function Reportes() {
                             C$ {cs.initial_cash_nio.toFixed(2)}
                           </td>
                           <td className="py-3.5 px-5 text-right font-mono text-white">
-                            C$ {cs.expected_sales_nio.toFixed(2)}
+                            C$ {expected.toFixed(2)}
                           </td>
                           <td className="py-3.5 px-5 text-right font-mono text-white">
                             {isClosed ? (
