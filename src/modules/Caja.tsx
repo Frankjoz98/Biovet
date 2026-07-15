@@ -117,6 +117,7 @@ export default function Caja({ currentUserId }: CajaProps) {
     cashSales: number;
     transferSales: number;
     creditSales: number;
+    expensesAmount: number;
     expectedCash: number;
   } | null>(null);
 
@@ -408,9 +409,19 @@ export default function Caja({ currentUserId }: CajaProps) {
       const creditSales = (salesData || [])
         .filter(s => s.payment_method === 'credit')
         .reduce((sum, s) => sum + Number(s.total_amount), 0);
-      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales + transferSales;
 
-      setPreCloseData({ cashSales, transferSales, creditSales, expectedCash });
+      // Fetch expenses for the active session
+      const { data: expensesData } = await supabase
+        .from('bv_expenses')
+        .select('amount')
+        .gte('created_at', activeSession.opened_at);
+      
+      const expensesAmount = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
+
+      // El esperado FÍSICO en gaveta es solo el Efectivo inicial + Ventas en efectivo - Gastos
+      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales - expensesAmount;
+
+      setPreCloseData({ cashSales, transferSales, creditSales, expensesAmount, expectedCash });
       setShowPreCloseModal(true);
     } catch (error) {
       const err = error as Error;
@@ -429,28 +440,43 @@ export default function Caja({ currentUserId }: CajaProps) {
         .eq('cash_session_id', activeSession.id)
         .eq('status', 'active');
 
-      // Solo efectivo y transferencia cuentan como esperado en caja física
-      const totalSalesNio = (salesData || [])
-        .filter(s => s.payment_method !== 'credit')
+      // Solo el efectivo cuenta como esperado físico en la caja
+      const totalCashSales = (salesData || [])
+        .filter(s => s.payment_method === 'cash')
         .reduce((sum, s) => sum + Number(s.total_amount), 0);
 
-      // Los créditos se guardan separados (no son efectivo, no generan faltante)
+      const totalTransferSales = (salesData || [])
+        .filter(s => s.payment_method === 'transfer')
+        .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
       const totalCreditNio = (salesData || [])
         .filter(s => s.payment_method === 'credit')
         .reduce((sum, s) => sum + Number(s.total_amount), 0);
 
+      // Fetch expenses for the active session
+      const { data: expensesData } = await supabase
+        .from('bv_expenses')
+        .select('amount')
+        .gte('created_at', activeSession.opened_at);
+      
+      const expensesAmount = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
+
       const realNio = parseFloat(closeSessionForm.real_nio) || 0;
+
+      // Notas automáticas para guardar el registro de transferencias y gastos en la sesión
+      const systemNotes = `[Sis] Transf: C$ ${totalTransferSales.toFixed(2)} | Gastos: C$ ${expensesAmount.toFixed(2)}`;
+      const finalNotes = closeSessionForm.notes ? `${systemNotes} | [Usuario] ${closeSessionForm.notes}` : systemNotes;
 
       const { error } = await supabase
         .from('bv_cash_sessions')
         .update({
           closed_at: new Date().toISOString(),
-          expected_sales_nio: totalSalesNio,
+          expected_sales_nio: totalCashSales - expensesAmount,
           expected_sales_usd: 0,
           real_cash_nio: realNio,
           real_cash_usd: 0,
           credit_amount_nio: totalCreditNio,
-          difference_notes: closeSessionForm.notes,
+          difference_notes: finalNotes,
           status: 'closed'
         })
         .eq('id', activeSession.id);
@@ -1335,9 +1361,18 @@ export default function Caja({ currentUserId }: CajaProps) {
                 <span className="font-mono font-bold text-neon-emerald">+ C$ {preCloseData.cashSales.toFixed(2)}</span>
               </div>
               <div className="flex justify-between items-center py-2.5 px-4 bg-white/3 rounded-lg">
-                <span className="text-sm text-gray-400">Ventas por transferencia</span>
-                <span className="font-mono font-bold text-neon-blue">+ C$ {preCloseData.transferSales.toFixed(2)}</span>
+                <div className="flex flex-col">
+                  <span className="text-sm text-gray-400">Ventas por transferencia</span>
+                  <span className="text-[10px] text-gray-500">Depositado en el banco (no está en gaveta)</span>
+                </div>
+                <span className="font-mono font-bold text-neon-blue">C$ {preCloseData.transferSales.toFixed(2)}</span>
               </div>
+              {preCloseData.expensesAmount > 0 && (
+                <div className="flex justify-between items-center py-2.5 px-4 bg-rose-500/10 rounded-lg">
+                  <span className="text-sm text-rose-400 font-bold">Gastos pagados (retirados de caja)</span>
+                  <span className="font-mono font-bold text-rose-500">- C$ {preCloseData.expensesAmount.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center py-2.5 px-4 border-t border-white/10 mt-1 pt-3">
                 <span className="text-sm font-bold text-white uppercase tracking-wide">Total esperado en caja</span>
                 <span className="font-mono font-black text-xl text-white">C$ {preCloseData.expectedCash.toFixed(2)}</span>
