@@ -418,8 +418,8 @@ export default function Caja({ currentUserId }: CajaProps) {
       
       const expensesAmount = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
 
-      // El esperado FÍSICO en gaveta es solo el Efectivo inicial + Ventas en efectivo - Gastos
-      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales - expensesAmount;
+      // El cliente requiere que las transferencias se sumen como si fueran efectivo físico
+      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales + transferSales - expensesAmount;
 
       setPreCloseData({ cashSales, transferSales, creditSales, expensesAmount, expectedCash });
       setShowPreCloseModal(true);
@@ -467,11 +467,14 @@ export default function Caja({ currentUserId }: CajaProps) {
       const systemNotes = `[Sis] Transf: C$ ${totalTransferSales.toFixed(2)} | Gastos: C$ ${expensesAmount.toFixed(2)}`;
       const finalNotes = closeSessionForm.notes ? `${systemNotes} | [Usuario] ${closeSessionForm.notes}` : systemNotes;
 
+      // El cliente requiere que totalCashSales y totalTransferSales se sumen al esperado de la sesión
+      const expectedSalesNio = totalCashSales + totalTransferSales - expensesAmount;
+
       const { error } = await supabase
         .from('bv_cash_sessions')
         .update({
           closed_at: new Date().toISOString(),
-          expected_sales_nio: totalCashSales - expensesAmount,
+          expected_sales_nio: expectedSalesNio,
           expected_sales_usd: 0,
           real_cash_nio: realNio,
           real_cash_usd: 0,
@@ -1363,9 +1366,9 @@ export default function Caja({ currentUserId }: CajaProps) {
               <div className="flex justify-between items-center py-2.5 px-4 bg-white/3 rounded-lg">
                 <div className="flex flex-col">
                   <span className="text-sm text-gray-400">Ventas por transferencia</span>
-                  <span className="text-[10px] text-gray-500">Depositado en el banco (no está en gaveta)</span>
+                  <span className="text-[10px] text-gray-500">Se contabiliza como ingreso físico</span>
                 </div>
-                <span className="font-mono font-bold text-neon-blue">C$ {preCloseData.transferSales.toFixed(2)}</span>
+                <span className="font-mono font-bold text-neon-blue">+ C$ {preCloseData.transferSales.toFixed(2)}</span>
               </div>
               {preCloseData.expensesAmount > 0 && (
                 <div className="flex justify-between items-center py-2.5 px-4 bg-rose-500/10 rounded-lg">
