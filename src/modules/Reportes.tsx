@@ -23,7 +23,8 @@ import {
   Navigation,
   Award,
   Store,
-  CreditCard
+  CreditCard,
+  Info
 } from 'lucide-react';
 
 interface Expense {
@@ -193,6 +194,9 @@ export default function Reportes() {
   const [ownerPassword, setOwnerPassword] = useState('');
   const [anulando, setAnulando] = useState(false);
   const [anularError, setAnularError] = useState('');
+
+  // Profit Explanation Modal
+  const [showProfitExplanationModal, setShowProfitExplanationModal] = useState(false);
 
   // Date filters (defaults to first day of current month to today)
   const getInitialDates = () => {
@@ -717,7 +721,14 @@ export default function Reportes() {
               <div className="p-3 bg-rose-500/10 rounded-lg text-rose-500"><TrendingDown size={20} /></div>
             </div>
 
-            <div className="glass-panel p-4 rounded-xl border border-neon-emerald/20 bg-neon-emerald/5 flex items-center justify-between shadow-card-glow">
+            <div className="glass-panel p-4 rounded-xl border border-neon-emerald/20 bg-neon-emerald/5 flex items-center justify-between shadow-card-glow relative group">
+              <button
+                onClick={() => setShowProfitExplanationModal(true)}
+                className="absolute top-2 right-2 p-1.5 text-neon-emerald/60 hover:text-white hover:bg-neon-emerald/20 rounded-full transition"
+                title="¿Por qué tengo esta utilidad?"
+              >
+                <Info size={16} />
+              </button>
               <div className="space-y-1">
                 <span className="text-neon-emerald text-xs font-semibold uppercase block">Utilidad Neta</span>
                 <span className="text-2xl font-black font-mono text-neon-emerald">C$ {summary.netProfit.toFixed(2)}</span>
@@ -1720,6 +1731,69 @@ export default function Reportes() {
         </div>
       )}
 
+      {/* ── Profit Explanation Modal ────────────────────────────────────── */}
+      {showProfitExplanationModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-lg rounded-xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowProfitExplanationModal(false)}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <Info className="text-neon-blue" />
+              Análisis Fácil de tus Ganancias
+            </h2>
+            <p className="text-sm text-gray-400 mb-6 leading-relaxed">
+              El sistema usa un modelo contable de <strong>Flujo de Caja</strong>. Esto significa que solo suma el dinero real que entró a tu gaveta y le resta el dinero real que salió de ella.
+            </p>
+
+            <div className="space-y-3 font-mono text-sm">
+              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
+                <span className="text-gray-300">💵 Dinero real que entró (Ventas Cobradas)</span>
+                <span className="text-white font-bold">C$ {summary.totalSales.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border-b border-white/10">
+                <span className="text-gray-300">📦 Costo de la mercadería vendida</span>
+                <span className="text-rose-400 font-bold">− C$ {summary.totalCogs.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-neon-blue/10 rounded-lg">
+                <span className="text-neon-blue font-bold">📈 Tu ganancia real en mano (Margen Bruto)</span>
+                <span className="text-neon-blue font-bold">C$ {(summary.totalSales - summary.totalCogs).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border-b border-white/10">
+                <span className="text-gray-300">💸 Lo que pagaste en Gastos y Comisiones</span>
+                <span className="text-rose-400 font-bold">− C$ {(summary.totalExpenses + summary.totalCommissions).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-neon-emerald/10 border border-neon-emerald/20 rounded-lg shadow-card-glow">
+                <span className="text-neon-emerald font-bold uppercase">💰 Utilidad Neta Liquida</span>
+                <span className={`font-bold text-lg ${summary.netProfit >= 0 ? 'text-neon-emerald' : 'text-rose-500'}`}>
+                  C$ {summary.netProfit.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg flex gap-3 items-start">
+              <CreditCard className="text-amber-400 shrink-0 mt-1" size={24} />
+              <p className="text-xs text-amber-400/90 leading-relaxed">
+                <strong className="block text-amber-400 text-sm mb-1">¡Ojo con tus Créditos!</strong>
+                Tienes <strong>C$ {((summary as any).creditPending || 0).toFixed(2)}</strong> prestados en la calle. 
+                Si esos clientes te hubieran pagado de contado, tu ganancia de hoy sería mucho mayor. El sistema es exacto y no cuenta ese dinero como "ganancia" hasta que el cliente realmente te lo venga a pagar.
+              </p>
+            </div>
+            
+            <div className="mt-6 text-center">
+              <button 
+                onClick={() => setShowProfitExplanationModal(false)}
+                className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg transition"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
