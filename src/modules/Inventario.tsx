@@ -42,6 +42,8 @@ export default function Inventario({ userRole }: InventarioProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('Todas');
+  const [stockFilter, setStockFilter] = useState('Todos');
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -254,10 +256,14 @@ export default function Inventario({ userRole }: InventarioProps) {
     setShowAddModal(true);
   }
 
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.code.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.code.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = categoryFilter === 'Todas' || (p.category || 'Otros') === categoryFilter;
+    const matchesStock = stockFilter === 'Todos' ? true :
+                         stockFilter === 'En Stock' ? p.stock > p.min_stock :
+                         p.stock <= p.min_stock;
+    return matchesSearch && matchesCategory && matchesStock;
+  });
 
   const inputClass = 'w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm';
   const inputMonoClass = inputClass + ' font-mono';
@@ -301,7 +307,8 @@ export default function Inventario({ userRole }: InventarioProps) {
       </div>
 
       {/* Search */}
-      <div className="flex gap-4">
+      {/* Search and Filters */}
+      <div className="flex flex-col lg:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-2.5 text-gray-500" size={18} />
           <input
@@ -312,9 +319,28 @@ export default function Inventario({ userRole }: InventarioProps) {
             className="w-full bg-[#0d0d18] border border-white/10 rounded-lg py-2 pl-10 pr-4 text-white focus:outline-none focus:border-neon-blue/50 transition text-sm"
           />
         </div>
-        <button onClick={fetchProducts} className="p-2 border border-white/10 rounded-lg bg-[#0d0d18] hover:bg-white/5 transition text-gray-400" title="Refrescar">
-          <RefreshCw size={18} />
-        </button>
+        <div className="flex gap-3 overflow-x-auto pb-1 lg:pb-0">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="bg-[#0d0d18] border border-white/10 rounded-lg py-2 px-4 text-gray-300 text-sm focus:outline-none focus:border-neon-blue cursor-pointer shrink-0"
+          >
+            <option value="Todas">Todas las categorías</option>
+            {PRODUCT_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+          </select>
+          <select
+            value={stockFilter}
+            onChange={(e) => setStockFilter(e.target.value)}
+            className="bg-[#0d0d18] border border-white/10 rounded-lg py-2 px-4 text-gray-300 text-sm focus:outline-none focus:border-neon-blue cursor-pointer shrink-0"
+          >
+            <option value="Todos">Todo el stock</option>
+            <option value="En Stock">✅ En stock</option>
+            <option value="Bajo Stock">⚠️ Bajo stock / Agotado</option>
+          </select>
+          <button onClick={fetchProducts} className="p-2 border border-white/10 rounded-lg bg-[#0d0d18] hover:bg-white/5 transition text-gray-400 shrink-0" title="Refrescar">
+            <RefreshCw size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Table */}

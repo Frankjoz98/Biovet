@@ -648,19 +648,31 @@ export default function Reportes() {
       <div className="flex flex-wrap items-center gap-3 bg-[#0d0d18]/50 border border-white/5 p-3 rounded-xl">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Período de Reportes:</span>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="bg-[#030308] border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-neon-blue"
-          />
+          <div className="relative">
+            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neon-blue pointer-events-none" size={14} />
+            <input
+              type="date"
+              onClick={(e) => {
+                try { 'showPicker' in HTMLInputElement.prototype && (e.target as HTMLInputElement).showPicker(); } catch (err) {}
+              }}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-[#030308] border border-white/10 rounded-lg pl-8 pr-2 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-neon-blue cursor-pointer [color-scheme:dark]"
+            />
+          </div>
           <span className="text-gray-500 text-xs">al</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="bg-[#030308] border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-neon-blue"
-          />
+          <div className="relative">
+            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neon-blue pointer-events-none" size={14} />
+            <input
+              type="date"
+              onClick={(e) => {
+                try { 'showPicker' in HTMLInputElement.prototype && (e.target as HTMLInputElement).showPicker(); } catch (err) {}
+              }}
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="bg-[#030308] border border-white/10 rounded-lg pl-8 pr-2 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-neon-blue cursor-pointer [color-scheme:dark]"
+            />
+          </div>
         </div>
       </div>
 
@@ -1421,13 +1433,19 @@ export default function Reportes() {
 
               <div>
                 <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">Fecha de Transacción *</label>
-                <input
-                  type="date"
-                  required
-                  value={newPayment.payment_date}
-                  onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })}
-                  className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-neon-blue text-sm font-mono"
-                />
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-neon-blue pointer-events-none" size={16} />
+                  <input
+                    type="date"
+                    onClick={(e) => {
+                      try { 'showPicker' in HTMLInputElement.prototype && (e.target as HTMLInputElement).showPicker(); } catch (err) {}
+                    }}
+                    required
+                    value={newPayment.payment_date}
+                    onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })}
+                    className="w-full bg-[#0d0d18] border border-white/10 rounded-lg p-2.5 pl-10 pr-3 text-white focus:outline-none focus:border-neon-blue text-sm font-mono cursor-pointer [color-scheme:dark]"
+                  />
+                </div>
               </div>
 
               <div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { BookOpen, RefreshCw, Search, TrendingUp, TrendingDown, ShoppingCart, Settings, User, Loader2 } from 'lucide-react';
+import { BookOpen, RefreshCw, Search, TrendingUp, TrendingDown, ShoppingCart, Settings, User, Loader2, Calendar } from 'lucide-react';
 
 interface AuditLog {
   id: string;
@@ -128,11 +128,19 @@ export default function Bitacora() {
           ))}
         </select>
         <div className="flex items-center gap-2">
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-            className="bg-[#0d0d18] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-400" />
+          <div className="relative">
+            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" size={14} />
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              onClick={(e) => { try { 'showPicker' in HTMLInputElement.prototype && (e.target as HTMLInputElement).showPicker(); } catch (err) {} }}
+              className="bg-[#0d0d18] border border-white/10 rounded-lg pl-8 pr-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-400 cursor-pointer [color-scheme:dark]" />
+          </div>
           <span className="text-gray-500 text-xs">al</span>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-            className="bg-[#0d0d18] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-400" />
+          <div className="relative">
+            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" size={14} />
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              onClick={(e) => { try { 'showPicker' in HTMLInputElement.prototype && (e.target as HTMLInputElement).showPicker(); } catch (err) {} }}
+              className="bg-[#0d0d18] border border-white/10 rounded-lg pl-8 pr-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-400 cursor-pointer [color-scheme:dark]" />
+          </div>
         </div>
         <button onClick={fetchLogs} className="p-2 border border-white/10 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition">
           <RefreshCw size={15} />
