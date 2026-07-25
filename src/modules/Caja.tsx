@@ -9,6 +9,7 @@ interface CartItem {
   product: Product;
   quantity: number;
   discountPct: number; // Porcentaje de descuento por ítem (0-100)
+  discountFixed: number; // Monto de descuento fijo por ítem en C$
 }
 
 interface CashSession {
@@ -540,10 +541,12 @@ export default function Caja({ currentUserId }: CajaProps) {
         return;
       }
       const newCart = [...cart];
+      const newTotal = newCart[existingIndex].product.price * newQty;
       newCart[existingIndex].quantity = newQty;
+      newCart[existingIndex].discountFixed = Number((newTotal * (newCart[existingIndex].discountPct / 100)).toFixed(2));
       setCart(newCart);
     } else {
-      setCart([...cart, { product, quantity: 1, discountPct: 0 }]);
+      setCart([...cart, { product, quantity: 1, discountPct: 0, discountFixed: 0 }]);
     }
   };
 
@@ -561,27 +564,50 @@ export default function Caja({ currentUserId }: CajaProps) {
       return;
     }
 
-    setCart(cart.map(item => 
-      item.product.id === productId ? { ...item, quantity } : item
-    ));
+    setCart(cart.map(item => {
+      if (item.product.id === productId) {
+        const newTotal = item.product.price * quantity;
+        const newFixed = Number((newTotal * (item.discountPct / 100)).toFixed(2));
+        return { ...item, quantity, discountFixed: newFixed };
+      }
+      return item;
+    }));
   };
 
   const removeFromCart = (productId: string) => {
     setCart(cart.filter(item => item.product.id !== productId));
   };
 
-  // Descuento individual por ítem
-  const updateItemDiscount = (productId: string, pct: number) => {
+  // Descuento porcentual por ítem
+  const updateItemDiscountPct = (productId: string, pct: number) => {
     const clamped = Math.max(0, Math.min(100, pct));
-    setCart(cart.map(item =>
-      item.product.id === productId ? { ...item, discountPct: clamped } : item
-    ));
+    setCart(cart.map(item => {
+      if (item.product.id === productId) {
+        const itemTotal = item.product.price * item.quantity;
+        const fixed = Number((itemTotal * (clamped / 100)).toFixed(2));
+        return { ...item, discountPct: clamped, discountFixed: fixed };
+      }
+      return item;
+    }));
+  };
+
+  // Descuento monetario fijo por ítem (en C$)
+  const updateItemDiscountFixed = (productId: string, fixed: number) => {
+    setCart(cart.map(item => {
+      if (item.product.id === productId) {
+        const itemTotal = item.product.price * item.quantity;
+        const clamped = Math.max(0, Math.min(itemTotal, fixed));
+        const pct = itemTotal > 0 ? Number(((clamped / itemTotal) * 100).toFixed(2)) : 0;
+        return { ...item, discountFixed: clamped, discountPct: pct };
+      }
+      return item;
+    }));
   };
 
   // Totals calculations (con descuentos por ítem)
   const cartSubtotal = cart.reduce((sum, item) => {
     const itemTotal = item.product.price * item.quantity;
-    const itemDiscount = itemTotal * (item.discountPct / 100);
+    const itemDiscount = item.discountFixed ?? (itemTotal * (item.discountPct / 100));
     return sum + (itemTotal - itemDiscount);
   }, 0);
 
@@ -591,7 +617,10 @@ export default function Caja({ currentUserId }: CajaProps) {
   const globalDiscountAmt = Math.max(globalPctAmt, globalFixedAmt);
 
   const cartTotal = Math.max(0, cartSubtotal - globalDiscountAmt);
-  const totalDiscountAmt = cart.reduce((sum, item) => sum + (item.product.price * item.quantity * (item.discountPct / 100)), 0) + globalDiscountAmt;
+  const totalDiscountAmt = cart.reduce((sum, item) => {
+    const itemTotal = item.product.price * item.quantity;
+    return sum + (item.discountFixed ?? (itemTotal * (item.discountPct / 100)));
+  }, 0) + globalDiscountAmt;
 
   // Handler: al cambiar %, calcular monto equivalente
   function handleGlobalPctChange(val: string) {
@@ -716,7 +745,7 @@ export default function Caja({ currentUserId }: CajaProps) {
         const commissionRule = commissionsConfig.find(c => c.category_name.toLowerCase() === pCategory.toLowerCase());
         const commPercentage = commissionRule ? commissionRule.percentage : 0;
         const baseItemPrice = item.product.price * item.quantity;
-        const itemDiscountAmt = baseItemPrice * (item.discountPct / 100);
+        const itemDiscountAmt = item.discountFixed ?? (baseItemPrice * (item.discountPct / 100));
         const totalItemPrice = baseItemPrice - itemDiscountAmt;
         const commissionAmount = (totalItemPrice * commPercentage) / 100;
 
@@ -1067,7 +1096,7 @@ export default function Caja({ currentUserId }: CajaProps) {
                       <th className="px-4 pb-2 font-semibold">Producto</th>
                       <th className="px-4 pb-2 font-semibold text-center">Precio Unit.</th>
                       <th className="px-4 pb-2 font-semibold text-center w-36">Cantidad</th>
-                      <th className="px-4 pb-2 font-semibold text-center w-28">Dto.%</th>
+                      <th className="px-4 pb-2 font-semibold text-center w-52">Descuento (% / C$)</th>
                       <th className="px-4 pb-2 font-semibold text-right">Subtotal</th>
                       <th className="px-4 pb-2 w-12"></th>
                     </tr>
@@ -1075,7 +1104,7 @@ export default function Caja({ currentUserId }: CajaProps) {
                   <tbody>
                     {cart.map((item) => {
                       const itemBase = item.product.price * item.quantity;
-                      const itemDiscounted = itemBase * (1 - item.discountPct / 100);
+                      const itemDiscounted = Math.max(0, itemBase - (item.discountFixed ?? (itemBase * (item.discountPct / 100))));
                       return (
                         <tr key={item.product.id} className="bg-white/5 hover:bg-white/10 transition-colors shadow-sm group">
                           <td className="px-4 py-4 rounded-l-xl">
@@ -1097,15 +1126,30 @@ export default function Caja({ currentUserId }: CajaProps) {
                               <button onClick={() => updateQuantity(item.product.id, item.quantity + 1)} className="w-8 h-8 bg-black/40 hover:bg-white/10 border border-white/5 rounded-lg text-white font-bold text-sm flex items-center justify-center transition">+</button>
                             </div>
                           </td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1.5 justify-center">
-                              <input
-                                type="number" min="0" max="100"
-                                value={item.discountPct}
-                                onChange={(e) => updateItemDiscount(item.product.id, parseFloat(e.target.value) || 0)}
-                                className="w-10 bg-transparent text-center font-mono text-sm text-amber-400 focus:outline-none font-bold"
-                              />
-                              <span className="text-[10px] text-amber-400/50 font-bold">%</span>
+                          <td className="px-2 py-4">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* % Descuento */}
+                              <div className="flex items-center gap-0.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1.5" title="Descuento Porcentual (%)">
+                                <input
+                                  type="number" min="0" max="100" step="any"
+                                  value={item.discountPct || ''}
+                                  placeholder="0"
+                                  onChange={(e) => updateItemDiscountPct(item.product.id, parseFloat(e.target.value) || 0)}
+                                  className="w-10 bg-transparent text-right font-mono text-xs text-amber-400 focus:outline-none font-bold placeholder-amber-400/30"
+                                />
+                                <span className="text-[11px] text-amber-400/60 font-bold">%</span>
+                              </div>
+                              {/* C$ Descuento Fijo */}
+                              <div className="flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2 py-1.5" title="Descuento Fijo (C$)">
+                                <span className="text-[11px] text-emerald-400/60 font-bold">C$</span>
+                                <input
+                                  type="number" min="0" max={item.product.price * item.quantity} step="any"
+                                  value={item.discountFixed || ''}
+                                  placeholder="0"
+                                  onChange={(e) => updateItemDiscountFixed(item.product.id, parseFloat(e.target.value) || 0)}
+                                  className="w-12 bg-transparent text-right font-mono text-xs text-emerald-400 focus:outline-none font-bold placeholder-emerald-400/30"
+                                />
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-4 text-right">
@@ -1622,6 +1666,8 @@ export default function Caja({ currentUserId }: CajaProps) {
                   {/* Items */}
                   {receiptData.items.map((item) => {
                     const lineTotal = item.product.price * item.quantity;
+                    const lineDiscount = item.discountFixed ?? (lineTotal * (item.discountPct / 100));
+                    const finalLineTotal = lineTotal - lineDiscount;
                     return (
                       <div
                         key={item.product.id}
@@ -1633,11 +1679,12 @@ export default function Caja({ currentUserId }: CajaProps) {
                           </span>
                           <span style={{ textAlign: 'right', flex: 1 }}>{item.quantity}</span>
                           <span style={{ textAlign: 'right', flex: 1 }}>
-                            C$ {lineTotal.toFixed(2)}
+                            C$ {finalLineTotal.toFixed(2)}
                           </span>
                         </div>
                         <div style={{ color: '#555', fontSize: '9px' }}>
                           P.U.: C$ {item.product.price.toFixed(2)}
+                          {lineDiscount > 0 && ` (Dto: -C$ ${lineDiscount.toFixed(2)})`}
                         </div>
                       </div>
                     );
