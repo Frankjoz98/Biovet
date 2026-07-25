@@ -118,6 +118,7 @@ export default function Caja({ currentUserId }: CajaProps) {
     transferSales: number;
     creditSales: number;
     expensesAmount: number;
+    creditPaymentsAmount: number;
     expectedCash: number;
   } | null>(null);
 
@@ -394,6 +395,9 @@ export default function Caja({ currentUserId }: CajaProps) {
   async function handleOpenPreClose() {
     if (!activeSession) return;
     try {
+      const sessionStart = activeSession.opened_at;
+      const sessionEnd = new Date().toISOString();
+
       const { data: salesData } = await supabase
         .from('bv_sales')
         .select('total_amount, payment_method')
@@ -414,14 +418,24 @@ export default function Caja({ currentUserId }: CajaProps) {
       const { data: expensesData } = await supabase
         .from('bv_expenses')
         .select('amount')
-        .gte('created_at', activeSession.opened_at);
+        .gte('created_at', sessionStart)
+        .lte('created_at', sessionEnd);
       
       const expensesAmount = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
 
-      // El cliente requiere que las transferencias se sumen como si fueran efectivo físico
-      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales + transferSales - expensesAmount;
+      // Fetch abonos/pagos de créditos recibidos durante este turno
+      const { data: creditPaymentsData } = await supabase
+        .from('bv_credit_payments')
+        .select('amount')
+        .gte('created_at', sessionStart)
+        .lte('created_at', sessionEnd);
 
-      setPreCloseData({ cashSales, transferSales, creditSales, expensesAmount, expectedCash });
+      const creditPaymentsAmount = (creditPaymentsData || []).reduce((sum, p) => sum + Number(p.amount), 0);
+
+      // Los abonos recibidos en efectivo entran físicamente a la caja, se suman al esperado
+      const expectedCash = Number(activeSession.initial_cash_nio) + cashSales + transferSales + creditPaymentsAmount - expensesAmount;
+
+      setPreCloseData({ cashSales, transferSales, creditSales, expensesAmount, creditPaymentsAmount, expectedCash });
       setShowPreCloseModal(true);
     } catch (error) {
       const err = error as Error;
@@ -434,6 +448,9 @@ export default function Caja({ currentUserId }: CajaProps) {
     if (!activeSession) return;
 
     try {
+      const sessionStart = activeSession.opened_at;
+      const sessionEnd = new Date().toISOString();
+
       const { data: salesData } = await supabase
         .from('bv_sales')
         .select('total_amount, payment_method')
@@ -457,18 +474,28 @@ export default function Caja({ currentUserId }: CajaProps) {
       const { data: expensesData } = await supabase
         .from('bv_expenses')
         .select('amount')
-        .gte('created_at', activeSession.opened_at);
+        .gte('created_at', sessionStart)
+        .lte('created_at', sessionEnd);
       
       const expensesAmount = (expensesData || []).reduce((sum, e) => sum + Number(e.amount), 0);
 
+      // Fetch abonos/pagos de créditos recibidos durante este turno
+      const { data: creditPaymentsData } = await supabase
+        .from('bv_credit_payments')
+        .select('amount')
+        .gte('created_at', sessionStart)
+        .lte('created_at', sessionEnd);
+
+      const totalCreditPayments = (creditPaymentsData || []).reduce((sum, p) => sum + Number(p.amount), 0);
+
       const realNio = parseFloat(closeSessionForm.real_nio) || 0;
 
-      // Notas automáticas para guardar el registro de transferencias y gastos en la sesión
-      const systemNotes = `[Sis] Transf: C$ ${totalTransferSales.toFixed(2)} | Gastos: C$ ${expensesAmount.toFixed(2)}`;
+      // Notas automáticas para guardar el registro de transferencias, gastos y abonos en la sesión
+      const systemNotes = `[Sis] Transf: C$ ${totalTransferSales.toFixed(2)} | Gastos: C$ ${expensesAmount.toFixed(2)} | Abonos cobrados: C$ ${totalCreditPayments.toFixed(2)}`;
       const finalNotes = closeSessionForm.notes ? `${systemNotes} | [Usuario] ${closeSessionForm.notes}` : systemNotes;
 
-      // El cliente requiere que totalCashSales y totalTransferSales se sumen al esperado de la sesión
-      const expectedSalesNio = totalCashSales + totalTransferSales - expensesAmount;
+      // Los abonos recibidos también entran físicamente a la caja
+      const expectedSalesNio = totalCashSales + totalTransferSales + totalCreditPayments - expensesAmount;
 
       const { error } = await supabase
         .from('bv_cash_sessions')
@@ -479,6 +506,7 @@ export default function Caja({ currentUserId }: CajaProps) {
           real_cash_nio: realNio,
           real_cash_usd: 0,
           credit_amount_nio: totalCreditNio,
+          credit_payments_nio: totalCreditPayments,
           difference_notes: finalNotes,
           status: 'closed'
         })
@@ -1370,6 +1398,15 @@ export default function Caja({ currentUserId }: CajaProps) {
                 </div>
                 <span className="font-mono font-bold text-neon-blue">+ C$ {preCloseData.transferSales.toFixed(2)}</span>
               </div>
+              {preCloseData.creditPaymentsAmount > 0 && (
+                <div className="flex justify-between items-center py-2.5 px-4 bg-purple-500/10 rounded-lg">
+                  <div className="flex flex-col">
+                    <span className="text-sm text-purple-300 font-semibold">Abonos / Pagos de créditos cobrados</span>
+                    <span className="text-[10px] text-gray-500">Clientes que pagaron su deuda hoy — entra a la caja</span>
+                  </div>
+                  <span className="font-mono font-bold text-purple-300">+ C$ {preCloseData.creditPaymentsAmount.toFixed(2)}</span>
+                </div>
+              )}
               {preCloseData.expensesAmount > 0 && (
                 <div className="flex justify-between items-center py-2.5 px-4 bg-rose-500/10 rounded-lg">
                   <span className="text-sm text-rose-400 font-bold">Gastos pagados (retirados de caja)</span>
@@ -1383,7 +1420,7 @@ export default function Caja({ currentUserId }: CajaProps) {
               {preCloseData.creditSales > 0 && (
                 <div className="flex justify-between items-center py-2.5 px-4 bg-amber-500/5 border border-amber-500/20 rounded-lg mt-2">
                   <div>
-                    <span className="text-sm text-amber-400 font-semibold">Vendido al crédito</span>
+                    <span className="text-sm text-amber-400 font-semibold">Vendido al crédito (pendiente de cobro)</span>
                     <p className="text-[10px] text-gray-500">No está en caja — está en cartera por cobrar</p>
                   </div>
                   <span className="font-mono font-bold text-amber-400">C$ {preCloseData.creditSales.toFixed(2)}</span>
