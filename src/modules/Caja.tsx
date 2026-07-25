@@ -1030,7 +1030,7 @@ export default function Caja({ currentUserId }: CajaProps) {
         <div className="fixed inset-0 z-50 flex flex-col md:flex-row bg-[#08080f] w-full h-full overflow-hidden animate-in fade-in duration-200">
           
           {/* Left Column — Cart Items */}
-          <div className="flex-1 flex flex-col h-full border-r border-white/10 relative">
+          <div className="flex-1 min-w-0 flex flex-col h-full border-r border-white/10 relative">
             {/* Header */}
             <div className="flex items-center justify-between gap-3 px-8 py-5 border-b border-white/10 bg-white/2 shrink-0">
               <div className="flex items-center gap-3">
@@ -1083,22 +1083,22 @@ export default function Caja({ currentUserId }: CajaProps) {
             </div>
 
             {/* Items List */}
-            <div className="flex-1 overflow-y-auto px-8 py-6 bg-[#030308]">
+            <div className="flex-1 overflow-auto px-4 lg:px-6 py-6 bg-[#030308]">
               {cart.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500">
                   <ShoppingCart size={64} className="mb-4 opacity-10" />
                   <p className="text-lg">La factura está vacía</p>
                 </div>
               ) : (
-                <table className="w-full text-left border-separate border-spacing-y-3">
+                <table className="w-full text-left border-separate border-spacing-y-2">
                   <thead>
                     <tr className="text-xs text-gray-500 uppercase tracking-wider">
-                      <th className="px-4 pb-2 font-semibold">Producto</th>
-                      <th className="px-4 pb-2 font-semibold text-center">Precio Unit.</th>
-                      <th className="px-4 pb-2 font-semibold text-center w-36">Cantidad</th>
-                      <th className="px-4 pb-2 font-semibold text-center w-52">Descuento (% / C$)</th>
-                      <th className="px-4 pb-2 font-semibold text-right">Subtotal</th>
-                      <th className="px-4 pb-2 w-12"></th>
+                      <th className="px-3 pb-2 font-semibold">Producto</th>
+                      <th className="px-3 pb-2 font-semibold text-center">Precio Unit.</th>
+                      <th className="px-3 pb-2 font-semibold text-center w-32">Cantidad</th>
+                      <th className="px-3 pb-2 font-semibold text-center w-44">Descuento</th>
+                      <th className="px-3 pb-2 font-semibold text-right">Subtotal</th>
+                      <th className="px-2 pb-2 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1107,8 +1107,8 @@ export default function Caja({ currentUserId }: CajaProps) {
                       const itemDiscounted = Math.max(0, itemBase - (item.discountFixed ?? (itemBase * (item.discountPct / 100))));
                       return (
                         <tr key={item.product.id} className="bg-white/5 hover:bg-white/10 transition-colors shadow-sm group">
-                          <td className="px-4 py-4 rounded-l-xl">
-                            <h4 className="text-base font-bold text-white truncate max-w-[300px] xl:max-w-md">{item.product.name}</h4>
+                          <td className="px-3 py-3 rounded-l-xl">
+                            <h4 className="text-sm font-bold text-white truncate max-w-[170px] sm:max-w-[220px] lg:max-w-[260px] xl:max-w-[340px]">{item.product.name}</h4>
                             <span className="text-xs text-gray-400 font-mono">{item.product.code}</span>
                           </td>
                           <td className="px-4 py-4 text-center">
@@ -1126,36 +1126,36 @@ export default function Caja({ currentUserId }: CajaProps) {
                               <button onClick={() => updateQuantity(item.product.id, item.quantity + 1)} className="w-8 h-8 bg-black/40 hover:bg-white/10 border border-white/5 rounded-lg text-white font-bold text-sm flex items-center justify-center transition">+</button>
                             </div>
                           </td>
-                          <td className="px-2 py-4">
-                            <div className="flex items-center justify-center gap-1.5">
+                          <td className="px-2 py-3">
+                            <div className="flex items-center justify-center gap-1">
                               {/* % Descuento */}
-                              <div className="flex items-center gap-0.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1.5" title="Descuento Porcentual (%)">
+                              <div className="flex items-center gap-0.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-1.5 py-1" title="Descuento Porcentual (%)">
                                 <input
                                   type="number" min="0" max="100" step="any"
                                   value={item.discountPct || ''}
                                   placeholder="0"
                                   onChange={(e) => updateItemDiscountPct(item.product.id, parseFloat(e.target.value) || 0)}
-                                  className="w-10 bg-transparent text-right font-mono text-xs text-amber-400 focus:outline-none font-bold placeholder-amber-400/30"
+                                  className="w-8 bg-transparent text-right font-mono text-xs text-amber-400 focus:outline-none font-bold placeholder-amber-400/30"
                                 />
                                 <span className="text-[11px] text-amber-400/60 font-bold">%</span>
                               </div>
                               {/* C$ Descuento Fijo */}
-                              <div className="flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2 py-1.5" title="Descuento Fijo (C$)">
+                              <div className="flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-1.5 py-1" title="Descuento Fijo (C$)">
                                 <span className="text-[11px] text-emerald-400/60 font-bold">C$</span>
                                 <input
                                   type="number" min="0" max={item.product.price * item.quantity} step="any"
                                   value={item.discountFixed || ''}
                                   placeholder="0"
                                   onChange={(e) => updateItemDiscountFixed(item.product.id, parseFloat(e.target.value) || 0)}
-                                  className="w-12 bg-transparent text-right font-mono text-xs text-emerald-400 focus:outline-none font-bold placeholder-emerald-400/30"
+                                  className="w-10 bg-transparent text-right font-mono text-xs text-emerald-400 focus:outline-none font-bold placeholder-emerald-400/30"
                                 />
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-4 text-right">
-                            <span className="text-lg font-black font-mono text-white">C$ {itemDiscounted.toFixed(2)}</span>
+                          <td className="px-3 py-3 text-right">
+                            <span className="text-base font-black font-mono text-white">C$ {itemDiscounted.toFixed(2)}</span>
                           </td>
-                          <td className="px-4 py-4 rounded-r-xl text-center">
+                          <td className="px-2 py-3 rounded-r-xl text-center">
                             <button
                               onClick={() => removeFromCart(item.product.id)}
                               className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-500/60 hover:text-rose-500 transition opacity-20 group-hover:opacity-100"
@@ -1174,7 +1174,7 @@ export default function Caja({ currentUserId }: CajaProps) {
           </div>
 
           {/* Right Column — Checkout Summary */}
-          <div className="w-full md:w-[400px] lg:w-[480px] flex flex-col bg-[#05050d] shrink-0 h-full">
+          <div className="w-full md:w-[380px] lg:w-[420px] xl:w-[460px] flex flex-col bg-[#05050d] shrink-0 h-full">
             {/* Header Right */}
             <div className="flex justify-end p-4 shrink-0 border-b border-white/5 bg-white/2">
               <button
