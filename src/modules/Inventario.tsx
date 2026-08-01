@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { Plus, Search, AlertTriangle, FileText, Edit, RefreshCw, Trash2, PackagePlus, Tag } from 'lucide-react';
+import { Plus, Search, AlertTriangle, FileText, Edit, RefreshCw, Trash2, PackagePlus, Tag, Repeat } from 'lucide-react';
 
 export interface Product {
   id: string;
@@ -69,9 +69,102 @@ export default function Inventario({ userRole }: InventarioProps) {
   });
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([{ ...EMPTY_PURCHASE_ITEM }]);
 
+  // ── Transfer / Conversion State ──────────────────────────────────────────────
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [savingTransfer, setSavingTransfer] = useState(false);
+  const [transferForm, setTransferForm] = useState({
+    sourceProductId: '',
+    sourceQty: '1',
+    targetProductId: '',
+    conversionFactor: '100',
+  });
+
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  async function handleExecuteTransfer(e: React.FormEvent) {
+    e.preventDefault();
+    const sourceProduct = products.find(p => p.id === transferForm.sourceProductId);
+    const targetProduct = products.find(p => p.id === transferForm.targetProductId);
+
+    if (!sourceProduct || !targetProduct) {
+      toast.warning('Por favor seleccione el producto origen y el producto destino.');
+      return;
+    }
+
+    if (sourceProduct.id === targetProduct.id) {
+      toast.warning('El producto origen y el producto destino deben ser distintos.');
+      return;
+    }
+
+    const qtySource = parseFloat(transferForm.sourceQty);
+    const factor = parseFloat(transferForm.conversionFactor);
+
+    if (isNaN(qtySource) || qtySource <= 0) {
+      toast.warning('Ingrese una cantidad a extraer válida.');
+      return;
+    }
+
+    if (isNaN(factor) || factor <= 0) {
+      toast.warning('Ingrese un factor de conversión válido.');
+      return;
+    }
+
+    if (sourceProduct.stock < qtySource) {
+      toast.error(`Stock insuficiente en ${sourceProduct.name}. Disponible: ${sourceProduct.stock}`);
+      return;
+    }
+
+    const targetAddQty = qtySource * factor;
+
+    setSavingTransfer(true);
+    try {
+      // 1. Restar stock a origen
+      const { error: errSource } = await supabase
+        .from('bv_products')
+        .update({ stock: sourceProduct.stock - qtySource })
+        .eq('id', sourceProduct.id);
+      if (errSource) throw errSource;
+
+      // 2. Sumar stock a destino
+      const { error: errTarget } = await supabase
+        .from('bv_products')
+        .update({ stock: targetProduct.stock + targetAddQty })
+        .eq('id', targetProduct.id);
+      if (errTarget) throw errTarget;
+
+      // 3. Registrar auditoría
+      await supabase.from('bv_audit_log').insert({
+        action: 'STOCK_TRANSFER',
+        entity: 'bv_products',
+        entity_id: sourceProduct.id,
+        old_value: {
+          source_name: sourceProduct.name,
+          source_old_stock: sourceProduct.stock,
+          target_name: targetProduct.name,
+          target_old_stock: targetProduct.stock,
+        },
+        new_value: {
+          source_new_stock: sourceProduct.stock - qtySource,
+          target_new_stock: targetProduct.stock + targetAddQty,
+          qty_transferred: qtySource,
+          conversion_factor: factor,
+          units_added: targetAddQty,
+        }
+      });
+
+      setShowTransferModal(false);
+      setTransferForm({ sourceProductId: '', sourceQty: '1', targetProductId: '', conversionFactor: '100' });
+      fetchProducts();
+      toast.success(`Conversión realizada: -${qtySource} en "${sourceProduct.name}" y +${targetAddQty} en "${targetProduct.name}".`);
+    } catch (error) {
+      const err = error as Error;
+      toast.error('Error al realizar el traslado: ' + err.message);
+    } finally {
+      setSavingTransfer(false);
+    }
+  }
 
   async function fetchProducts() {
     setLoading(true);
@@ -301,6 +394,16 @@ export default function Inventario({ userRole }: InventarioProps) {
             >
               <FileText size={18} />
               Registrar Compra
+            </button>
+            <button
+              onClick={() => {
+                setTransferForm({ sourceProductId: '', sourceQty: '1', targetProductId: '', conversionFactor: '100' });
+                setShowTransferModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition shadow-lg shadow-purple-900/30"
+            >
+              <Repeat size={18} />
+              Traslado / Conversión
             </button>
           </div>
         )}
@@ -595,6 +698,164 @@ export default function Inventario({ userRole }: InventarioProps) {
                 <button type="submit" disabled={savingPurchase}
                   className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg transition text-sm flex items-center gap-2 disabled:opacity-60">
                   {savingPurchase ? 'Guardando...' : `Ingresar ${purchaseItems.length} Producto(s)`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal de Traslado / Conversión de Inventario */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-xl rounded-2xl p-6 shadow-2xl relative border border-purple-500/20">
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-xl text-purple-400">
+                  <Repeat size={22} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Traslado y Conversión de Stock</h2>
+                  <p className="text-xs text-gray-400">Fracciona sacos/quintales hacia su presentación en libras o menudeo.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="text-gray-400 hover:text-white transition p-1"
+              >
+                <Trash2 size={0} className="hidden" /> {/* Dummy icon if needed */}
+                <span className="text-xl font-bold">&times;</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteTransfer} className="space-y-5">
+              {/* Bloque Origen (De) */}
+              <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-4 space-y-3">
+                <span className="text-xs font-bold text-rose-400 uppercase tracking-wider block">1. Producto Origen (Se descontará stock)</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold text-gray-400 mb-1">Seleccionar Producto Mayo</label>
+                    <select
+                      required
+                      value={transferForm.sourceProductId}
+                      onChange={(e) => setTransferForm({ ...transferForm, sourceProductId: e.target.value })}
+                      className={inputClass}
+                    >
+                      <option value="">-- Seleccionar producto --</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.code}) — Stock: {p.stock}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-400 mb-1">Cant. Extraer</label>
+                    <input
+                      type="number"
+                      required
+                      min="0.01"
+                      step="any"
+                      value={transferForm.sourceQty}
+                      onChange={(e) => setTransferForm({ ...transferForm, sourceQty: e.target.value })}
+                      className={inputMonoClass}
+                      placeholder="Ej: 1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Icono Conector */}
+              <div className="flex justify-center -my-2">
+                <div className="bg-purple-600/30 border border-purple-500/40 text-purple-300 p-2 rounded-full shadow-lg animate-bounce">
+                  <Repeat size={16} />
+                </div>
+              </div>
+
+              {/* Bloque Destino (A) */}
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">2. Producto Destino (Se incrementará stock)</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold text-gray-400 mb-1">Seleccionar Producto Menudeo</label>
+                    <select
+                      required
+                      value={transferForm.targetProductId}
+                      onChange={(e) => setTransferForm({ ...transferForm, targetProductId: e.target.value })}
+                      className={inputClass}
+                    >
+                      <option value="">-- Seleccionar producto --</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.code}) — Stock: {p.stock}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-400 mb-1">Unidades / Factor</label>
+                    <input
+                      type="number"
+                      required
+                      min="0.01"
+                      step="any"
+                      value={transferForm.conversionFactor}
+                      onChange={(e) => setTransferForm({ ...transferForm, conversionFactor: e.target.value })}
+                      className={inputMonoClass}
+                      placeholder="Ej: 100"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Previsualización en Tiempo Real */}
+              {(() => {
+                const srcP = products.find(p => p.id === transferForm.sourceProductId);
+                const tgtP = products.find(p => p.id === transferForm.targetProductId);
+                const sQty = parseFloat(transferForm.sourceQty) || 0;
+                const factor = parseFloat(transferForm.conversionFactor) || 0;
+                const addedQty = sQty * factor;
+
+                if (!srcP || !tgtP) return null;
+
+                const srcNewStock = srcP.stock - sQty;
+                const tgtNewStock = tgtP.stock + addedQty;
+
+                return (
+                  <div className="bg-[#080812] border border-white/10 rounded-xl p-3.5 space-y-2">
+                    <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider block">Resumen del Movimiento:</span>
+                    <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                      <div className="p-2 bg-white/5 rounded-lg">
+                        <span className="text-gray-400 block text-[10px]">ORIGEN ({srcP.name}):</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-rose-400 font-bold">{srcP.stock}</span>
+                          <span className="text-gray-500">➜</span>
+                          <span className={`font-bold ${srcNewStock < 0 ? 'text-rose-500 underline' : 'text-white'}`}>{srcNewStock}</span>
+                        </div>
+                      </div>
+                      <div className="p-2 bg-white/5 rounded-lg">
+                        <span className="text-gray-400 block text-[10px]">DESTINO ({tgtP.name}):</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-gray-400">{tgtP.stock}</span>
+                          <span className="text-gray-500">➜</span>
+                          <span className="text-emerald-400 font-bold">+{addedQty} ({tgtNewStock})</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Acciones */}
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(false)}
+                  className="px-4 py-2 border border-white/10 rounded-lg text-gray-400 hover:bg-white/5 transition text-sm font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingTransfer}
+                  className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition text-sm flex items-center gap-2 disabled:opacity-60 shadow-lg shadow-purple-900/40"
+                >
+                  {savingTransfer ? 'Procesando...' : 'Ejecutar Traslado'}
                 </button>
               </div>
             </form>
